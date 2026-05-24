@@ -1,10 +1,11 @@
      /plugin install frontend-design@claude-plugins-official
 
-on UI
+- time limit to 1mn if user not logged in
+- time limit to 5mn if user logged in
 - requires user email and name ?
 - select French or English
 - record all the logs and parse
-I need to know the latency, number of tokens, costs etc
+- I need to know the latency, number of tokens, costs etc
 
 - send a recap of what was said during the session by email.
 
@@ -12,6 +13,16 @@ I need to know the latency, number of tokens, costs etc
 
 - round robin : models and prompts and voices
 
+
+user account :
+input email, input first name, get magic link
+no password
+stays logged in ?
+
+
+fr and en versions
+
+images of loyola
 
 # Next
 

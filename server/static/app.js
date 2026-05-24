@@ -1,6 +1,6 @@
 "use strict";
 
-const talkBtn = document.getElementById("talk-btn");
+const agentsEl = document.getElementById("agents");
 const hangupBtn = document.getElementById("hangup-btn");
 const statusEl = document.getElementById("status");
 
@@ -11,38 +11,96 @@ function setStatus(text, cls) {
   statusEl.className = `status ${cls}`;
 }
 
-function showTalk() {
-  talkBtn.classList.remove("hidden");
+function showAgents() {
+  agentsEl.classList.remove("hidden");
   hangupBtn.classList.add("hidden");
 }
 
 function showHangup() {
-  talkBtn.classList.add("hidden");
+  agentsEl.classList.add("hidden");
   hangupBtn.classList.remove("hidden");
 }
 
-async function startSession() {
-  talkBtn.disabled = true;
+function talkLabel(agent) {
+  return agent.lang === "fr"
+    ? `Parlez avec ${agent.name}`
+    : `Talk to ${agent.name}`;
+}
+
+function setAgentButtonsDisabled(disabled) {
+  agentsEl.querySelectorAll("button").forEach((b) => { b.disabled = disabled; });
+}
+
+async function loadAgents() {
+  try {
+    const r = await fetch("/agents");
+    if (!r.ok) throw new Error(`status ${r.status}`);
+    const { agents } = await r.json();
+    renderAgents(agents);
+  } catch (e) {
+    console.error(e);
+    agentsEl.textContent = "could not load agents";
+  }
+}
+
+function renderAgents(agents) {
+  agentsEl.innerHTML = "";
+  if (!agents.length) {
+    agentsEl.textContent = "no agents available";
+    return;
+  }
+  for (const agent of agents) {
+    const card = document.createElement("div");
+    card.className = "agent-card";
+
+    const name = document.createElement("h2");
+    name.className = "agent-name";
+    name.textContent = agent.name;
+    card.appendChild(name);
+
+    if (agent.description) {
+      const desc = document.createElement("p");
+      desc.className = "agent-desc";
+      desc.textContent = agent.description;
+      card.appendChild(desc);
+    }
+
+    const btn = document.createElement("button");
+    btn.className = "primary";
+    btn.textContent = talkLabel(agent);
+    btn.addEventListener("click", () => startSession(agent.id));
+    card.appendChild(btn);
+
+    agentsEl.appendChild(card);
+  }
+}
+
+async function startSession(agentId) {
+  setAgentButtonsDisabled(true);
   setStatus("starting", "connecting");
 
   let body;
   try {
-    const r = await fetch("/start-session", { method: "POST" });
+    const r = await fetch("/start-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent: agentId }),
+    });
     if (r.status === 429) {
       setStatus("the agent is busy — try again in a moment", "error");
-      talkBtn.disabled = false;
+      setAgentButtonsDisabled(false);
       return;
     }
     if (!r.ok) {
       setStatus(`server error (${r.status})`, "error");
-      talkBtn.disabled = false;
+      setAgentButtonsDisabled(false);
       return;
     }
     body = await r.json();
   } catch (e) {
     console.error(e);
     setStatus("cannot reach the server", "error");
-    talkBtn.disabled = false;
+    setAgentButtonsDisabled(false);
     return;
   }
 
@@ -57,7 +115,6 @@ async function startSession() {
   callObject.on("joined-meeting", () => {
     setStatus("connected", "connected");
     showHangup();
-    talkBtn.disabled = false;
   });
 
   callObject.on("participant-joined", (ev) => {
@@ -128,15 +185,16 @@ function cleanup() {
     try { callObject.destroy(); } catch (_) {}
     callObject = null;
   }
-  showTalk();
-  talkBtn.disabled = false;
+  showAgents();
+  setAgentButtonsDisabled(false);
   hangupBtn.disabled = false;
 }
 
-talkBtn.addEventListener("click", startSession);
 hangupBtn.addEventListener("click", endSession);
 window.addEventListener("beforeunload", () => {
   if (callObject) {
     try { callObject.leave(); } catch (_) {}
   }
 });
+
+loadAgents();

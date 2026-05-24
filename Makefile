@@ -19,10 +19,11 @@ help: ## Show available make targets.
 build: ## Build the App Platform image locally.
 	docker build -t $(IMAGE):$(TAG) .
 
-run: ## Run the image locally with .env mounted, port $(PORT) exposed.
+run: ## Run the image locally with .env and personas mounted, port $(PORT) exposed.
 	docker run --rm -d \
 		--name $(CONTAINER) \
 		--env-file $(ENV_FILE) \
+		-v "$(CURDIR)/personas:/app/personas:ro" \
 		-p $(PORT):8080 \
 		$(IMAGE):$(TAG)
 	@echo "running at http://localhost:$(PORT)"

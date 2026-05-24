@@ -12,6 +12,7 @@ Run locally:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 from contextlib import asynccontextmanager
@@ -20,6 +21,7 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
@@ -34,6 +36,7 @@ MAX_SESSIONS = int(os.getenv("MAX_SESSIONS", "5"))
 ROOM_EXPIRY_SECONDS = 30 * 60  # 30 min
 
 STATIC_DIR = Path(__file__).parent / "static"
+PERSONAS_DIR = Path(__file__).parent.parent / "personas"
 
 _active_sessions: set[asyncio.Task] = set()
 
@@ -110,8 +113,39 @@ async def health():
     return {"ok": True, "active_sessions": len(_active_sessions)}
 
 
+@app.get("/agents")
+async def list_agents():
+    agents = []
+    for path in sorted(PERSONAS_DIR.glob("*.json")):
+        try:
+            with path.open() as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning(f"Skipping persona {path.name}: {e}")
+            continue
+        if data.get("active") is not True:
+            continue
+        agents.append({
+            "id": path.stem,
+            "name": data.get("name", path.stem),
+            "description": data.get("description", ""),
+            "lang": data.get("lang") or "en",
+        })
+    return {"agents": agents}
+
+
+class StartSessionBody(BaseModel):
+    agent: str
+
+
 @app.post("/start-session")
-async def start_session():
+async def start_session(body: StartSessionBody):
+    agent_name = (body.agent or "").strip()
+    if not agent_name:
+        raise HTTPException(status_code=400, detail="agent_required")
+    persona_path = PERSONAS_DIR / f"{agent_name}.json"
+    if not persona_path.exists():
+        raise HTTPException(status_code=404, detail="agent_not_found")
     if len(_active_sessions) >= MAX_SESSIONS:
         raise HTTPException(status_code=429, detail="agent_busy")
     if not DAILY_API_KEY:
@@ -129,7 +163,7 @@ async def start_session():
             logger.exception("Daily REST call failed")
             raise HTTPException(status_code=502, detail=f"daily_error: {e}")
 
-    task = asyncio.create_task(run_daily_bot(room_url, bot_token))
+    task = asyncio.create_task(run_daily_bot(room_url, bot_token, agent_name))
     _active_sessions.add(task)
     task.add_done_callback(_cleanup_task)
     logger.info(f"Spawned bot for room {room_name} (active={len(_active_sessions)})")

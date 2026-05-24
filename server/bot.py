@@ -55,10 +55,10 @@ PERSONAS_DIR = Path(__file__).parent.parent / "personas"
 DB_PATH = Path(__file__).parent / os.getenv("SCEANCE_DB", "sceance.db")
 
 
-def load_persona() -> dict:
-    agent_name = os.getenv("AGENT_NAME", "").strip()
+def load_persona(agent_name: str) -> dict:
+    agent_name = (agent_name or "").strip()
     if not agent_name:
-        raise RuntimeError("AGENT_NAME is not set in .env")
+        raise RuntimeError("agent_name is required")
     persona_path = PERSONAS_DIR / f"{agent_name}.json"
     if not persona_path.exists():
         raise FileNotFoundError(f"Persona file not found: {persona_path}")
@@ -108,26 +108,34 @@ def build_llm(persona: dict):
     raise ValueError(f"Unknown LLM provider in persona: {provider!r}")
 
 
-async def run_bot(transport: BaseTransport):
+async def run_bot(transport: BaseTransport, agent_name: str):
     """Main bot logic."""
-    persona = load_persona()
+    persona = load_persona(agent_name)
     logger.info(f"Starting bot with persona: {persona.get('name', '<unnamed>')}")
 
-    # Speech-to-Text service
+    # Speech-to-Text service — pick a model that supports the persona language.
+    # nova-3 is English-only; for non-English use nova-2.
+    lang = (persona.get("lang") or "en").lower()
+    stt_model = "nova-3" if lang.startswith("en") else "nova-2"
     stt = DeepgramSTTService(
         api_key=os.getenv("DEEPGRAM_API_KEY"),
         settings=DeepgramSTTService.Settings(
-          profanity_filter=False,
-      ),
+            model=stt_model,
+            language=lang,
+            profanity_filter=False,
+        ),
     )
+    logger.info(f"STT: deepgram model={stt_model} language={lang}")
 
     # Text-to-Speech service
     tts = CartesiaTTSService(
-            api_key=os.getenv("CARTESIA_API_KEY"),
-            settings=CartesiaTTSService.Settings(
-                voice=persona["tts_voice_id"],
-            ),
-        )
+        api_key=os.getenv("CARTESIA_API_KEY"),
+        settings=CartesiaTTSService.Settings(
+            voice=persona["tts_voice_id"],
+            language=lang,
+        ),
+    )
+    logger.info(f"TTS: cartesia voice={persona['tts_voice_id']} language={lang}")
 
 
     # LLM service (provider routed from persona["llm_model"])
@@ -210,7 +218,7 @@ async def run_bot(transport: BaseTransport):
     await runner.run(task)
 
 
-async def run_daily_bot(room_url: str, token: str):
+async def run_daily_bot(room_url: str, token: str, agent_name: str):
     """Join a Daily room as the bot. Used by server.py /start-session."""
     transport = DailyTransport(
         room_url,
@@ -221,7 +229,7 @@ async def run_daily_bot(room_url: str, token: str):
             audio_out_enabled=True,
         ),
     )
-    await run_bot(transport)
+    await run_bot(transport, agent_name)
 
 
 async def bot(runner_args: RunnerArguments):
@@ -254,7 +262,7 @@ async def bot(runner_args: RunnerArguments):
             logger.error(f"Unsupported runner arguments type: {type(runner_args)}")
             return
 
-    await run_bot(transport)
+    await run_bot(transport, os.getenv("AGENT_NAME", ""))
 
 
 if __name__ == "__main__":
