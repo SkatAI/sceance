@@ -1,0 +1,34 @@
+# Local-only artifacts that should never go into the image
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Local databases & audio dumps
+*.db
+*.db-journal
+*.wav
+*.mp3
+
+# Git + IDE noise
+.git/
+.gitignore
+.gitattributes
+.claude/
+.vscode/
+.idea/
+.DS_Store
+
+# Local debug + planning docs (server-side build doesn't need them)
+debug.log
+notes.md
+next.md
+inigo_deploy_spec.md
+*.plan.md
