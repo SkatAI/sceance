@@ -1,3 +1,18 @@
+     /plugin install frontend-design@claude-plugins-official
+
+on UI
+- requires user email and name ?
+- select French or English
+- record all the logs and parse
+I need to know the latency, number of tokens, costs etc
+
+- send a recap of what was said during the session by email.
+
+- session analysis
+
+- round robin : models and prompts and voices
+
+
 # Next
 
 

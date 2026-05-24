@@ -168,13 +168,30 @@ async def run_bot(transport: BaseTransport):
         observers=[TranscriptObserver(db)],
     )
 
-    @task.rtvi.event_handler("on_client_ready")
-    async def on_client_ready(rtvi):
-        # Kick off the conversation
+    kicked_off = False
+
+    async def kickoff(source: str):
+        nonlocal kicked_off
+        if kicked_off:
+            return
+        kicked_off = True
+        logger.info(f"Kicking off conversation via {source}")
         for msg in persona.get("opening_messages", []):
             context.add_message(msg)
             db.add_message(role=msg.get("role", "system"), text=msg.get("content", ""))
         await task.queue_frames([LLMRunFrame()])
+
+    # RTVI-aware clients (e.g. Pipecat React SDK) — keep for forward-compat.
+    @task.rtvi.event_handler("on_client_ready")
+    async def on_client_ready(rtvi):
+        await kickoff("rtvi:on_client_ready")
+
+    # Daily transport: fires when the first non-bot participant joins.
+    # This is the one that triggers for our daily-js browser client.
+    @transport.event_handler("on_first_participant_joined")
+    async def on_first_participant_joined(transport, participant):
+        logger.info(f"First participant joined: {participant.get('id', '?')}")
+        await kickoff("daily:on_first_participant_joined")
 
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
@@ -191,6 +208,20 @@ async def run_bot(transport: BaseTransport):
     runner = PipelineRunner(handle_sigint=False)
 
     await runner.run(task)
+
+
+async def run_daily_bot(room_url: str, token: str):
+    """Join a Daily room as the bot. Used by server.py /start-session."""
+    transport = DailyTransport(
+        room_url,
+        token,
+        "Inigo",
+        params=DailyParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+        ),
+    )
+    await run_bot(transport)
 
 
 async def bot(runner_args: RunnerArguments):

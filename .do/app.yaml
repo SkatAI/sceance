@@ -1,0 +1,60 @@
+# DigitalOcean App Platform spec for the sceance voice agent.
+# Source of truth for all non-secret deploy config.
+# Secret env vars (API keys) are referenced by name here; values live in
+# the App Platform UI and survive redeploys.
+
+name: sceance
+
+services:
+  - name: sceance
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 8080
+    dockerfile_path: Dockerfile
+    source_dir: /
+
+    github:
+      repo: SkatAI/sceance
+      branch: main
+      deploy_on_push: true
+
+    # App Platform overrides the Dockerfile CMD with this. Must cd into
+    # /app/server so uvicorn finds server.py — the Dockerfile's WORKDIR
+    # is not preserved across the run_command override.
+    run_command: cd /app/server && uv run --no-dev uvicorn server:app --host 0.0.0.0 --port 8080
+
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 20
+      period_seconds: 10
+      timeout_seconds: 5
+      failure_threshold: 3
+
+    envs:
+      - key: AGENT_NAME
+        scope: RUN_TIME
+        value: inigo3haiku
+      - key: MAX_SESSIONS
+        scope: RUN_TIME
+        value: "5"
+
+      # Secrets — values live in the App Platform UI.
+      - key: DAILY_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: ANTHROPIC_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: CARTESIA_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: DEEPGRAM_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: OPENAI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+
+domains:
+  - domain: inigo.alexisperrier.com
+    type: PRIMARY

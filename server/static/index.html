@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Talk to Inigo</title>
+  <link rel="stylesheet" href="/style.css" />
+  <script src="https://unpkg.com/@daily-co/daily-js"></script>
+</head>
+<body>
+  <main>
+    <h1>Inigo</h1>
+    <p class="intro">
+      An AI guide in the Ignatian tradition. A voice conversation —
+      bring a question, listen carefully, take your time.
+    </p>
+
+    <button id="talk-btn" class="primary">Talk to Inigo</button>
+    <button id="hangup-btn" class="secondary hidden">Hang up</button>
+
+    <div id="status" class="status idle">ready</div>
+
+    <p class="note">
+      You'll be asked to allow microphone access. Use headphones if you
+      can — it helps the conversation breathe.
+    </p>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
