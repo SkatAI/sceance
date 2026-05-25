@@ -19,6 +19,7 @@ from typing import Any
 import asyncpg
 from loguru import logger
 
+from memory import summarize_and_persist
 from storage import bulk_insert
 
 BATCH_MAX = 50
@@ -213,6 +214,13 @@ class SessionRecorder:
                     await self._drain_task
                 except (asyncio.CancelledError, Exception):
                     pass
+
+        # Kick off summarization in the background. Fire-and-forget: we do not
+        # await this — `close()` should return promptly so the bot task can exit.
+        if self._user_id is not None:
+            asyncio.create_task(
+                summarize_and_persist(self._pool, self.session_id, str(self._user_id))
+            )
 
         # Finalize session row.
         try:

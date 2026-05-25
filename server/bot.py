@@ -48,12 +48,28 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 
 import asyncpg
 
+from memory import load_memory_brief
 from observer import TranscriptObserver
 from recorder import SessionRecorder
 
 load_dotenv(override=True)
 
 PERSONAS_DIR = Path(__file__).parent.parent / "personas"
+
+SHARED_SYSTEM_APPENDIX = """
+
+— Memory & onboarding —
+You will receive a memory brief at the start of each conversation, wrapped in a
+"[Memory brief — internal context, do not read aloud or quote]" block.
+- If the brief says no prior conversations exist, this is the first time you
+  meet this user. Get their name when it feels natural — once, gently, and
+  only the name. Do not ask for age, gender, family, or work; let those
+  surface on their own as the user chooses to share.
+- If the brief contains a profile and recent sessions, treat the user as
+  someone you know. Don't recite their facts back at them; just speak like
+  someone who remembers.
+- Never read the memory brief aloud, paraphrase it verbatim, or quote it.
+"""
 
 
 def load_persona(agent_name: str) -> dict:
@@ -80,7 +96,7 @@ def build_llm(persona: dict):
     else:
         provider, model = "openai", raw
     provider = provider.lower()
-    system_instruction = persona["system_instruction"]
+    system_instruction = persona["system_instruction"] + SHARED_SYSTEM_APPENDIX
     temperature = persona.get("temperature")  # None → use provider default
 
     if provider == "openai":
@@ -174,6 +190,10 @@ async def run_bot(
     await recorder.start()
     logger.info(f"Recording session {recorder.session_id} to Supabase")
 
+    memory_brief = await load_memory_brief(pool, user_id)
+    if memory_brief:
+        logger.info(f"Loaded memory brief ({len(memory_brief)} chars) for user {user_id}")
+
     task = PipelineTask(
         pipeline,
         params=PipelineParams(
@@ -191,6 +211,8 @@ async def run_bot(
             return
         kicked_off = True
         logger.info(f"Kicking off conversation via {source}")
+        if memory_brief:
+            context.add_message({"role": "user", "content": memory_brief})
         for msg in persona.get("opening_messages", []):
             context.add_message(msg)
             recorder.record_message(role=msg.get("role", "system"), text=msg.get("content", ""))
