@@ -59,8 +59,13 @@ class TranscriptObserver(BaseObserver):
         frame = data.frame
         ts = data.timestamp
 
-        # Each frame is pushed at multiple points in the pipeline; dedupe by id.
-        fid = id(frame)
+        # Each frame is pushed at multiple points in the pipeline; dedupe by
+        # the frame's own monotonic id. (Earlier we used Python's id(), but
+        # CPython recycles addresses on GC, so short-lived LLMTextFrame chunks
+        # collided and got silently dropped — truncating assistant turns.)
+        fid = getattr(frame, "id", None)
+        if fid is None:
+            fid = id(frame)
         if fid in self._seen_frame_ids:
             return
         self._seen_frame_ids.add(fid)

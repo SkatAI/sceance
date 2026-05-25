@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sceance · Ledger</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/dashboard.css" />
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead-left">
+      <div class="eyebrow">Sceance · Operator</div>
+      <h1 class="title">Ledger of Transmissions</h1>
+      <p class="subtitle">A record of every séance — who spoke, for how long, at what cost.</p>
+    </div>
+    <nav class="period" id="period" role="tablist" aria-label="Period">
+      <button data-days="1"  role="tab">24h</button>
+      <button data-days="7"  role="tab" class="active">7d</button>
+      <button data-days="30" role="tab">30d</button>
+      <button data-days="365" role="tab">all</button>
+    </nav>
+  </header>
+
+  <section class="aggregate" id="aggregate" aria-label="Aggregate metrics">
+    <div class="agg-placeholder">Summoning…</div>
+  </section>
+
+  <section class="ttfb-row" id="ttfb" aria-label="Service latency"></section>
+
+  <section class="sessions">
+    <div class="sessions-head">
+      <h2>Recent séances</h2>
+      <div class="pager" id="pager"></div>
+    </div>
+    <ol class="session-list" id="sessions" aria-live="polite">
+      <li class="loading">Loading…</li>
+    </ol>
+  </section>
+
+  <footer class="footer">
+    <span>Sceance · operator console</span>
+    <a href="/">← back to the séance</a>
+  </footer>
+
+  <script src="/dashboard.js"></script>
+</body>
+</html>

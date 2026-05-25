@@ -1,6 +1,55 @@
      /plugin install frontend-design@claude-plugins-official
 
 
+Already supported (no code change — just edit the persona)
+
+  ┌──────────────────────────────────────┬──────────────┬────────────────────────────────────────────┬──────────────────────────┐
+  │          persona llm_model           │ typical TTFB │         quality on a 14k FR prompt         │ cost / M tok (in / out)  │
+  ├──────────────────────────────────────┼──────────────┼────────────────────────────────────────────┼──────────────────────────┤
+  │ anthropic:claude-haiku-4-5 (current) │ ~0.5s        │ very good                                  │ $1 / $5                  │
+  ├──────────────────────────────────────┼──────────────┼────────────────────────────────────────────┼──────────────────────────┤
+  │ openai:gpt-4o-mini                   │ ~0.4–0.6s    │ decent, sometimes drifts persona           │ $0.15 / $0.60 ← cheapest │
+  ├──────────────────────────────────────┼──────────────┼────────────────────────────────────────────┼──────────────────────────┤
+  │ openai:gpt-4.1-mini                  │ ~0.5–0.7s    │ better instruction following than 4o-mini  │ $0.40 / $1.60            │
+  ├──────────────────────────────────────┼──────────────┼────────────────────────────────────────────┼──────────────────────────┤
+  │ openai:gpt-4.1-nano                  │ ~0.3–0.5s    │ weakest of the four; OK for plumbing tests │ $0.10 / $0.40            │
+  └──────────────────────────────────────┴──────────────┴────────────────────────────────────────────┴──────────────────────────┘
+
+  These all use providers your build_llm already wires. Make a copy of the persona JSON, change llm_model, set active: true, refresh the page — they
+  show up as new buttons.
+
+  Needs a small backend addition — but the latency win is real
+
+  Groq-hosted Llama 3.3 70B. Groq's hardware does ~200–400ms TTFB even on a 70B model — substantially faster than anything from Anthropic/OpenAI at
+  comparable quality. French is solid (Llama 3.3 is multilingual). Pipecat has pipecat.services.groq.GroqLLMService (OpenAI-compatible). Adding it to
+  build_llm is a ~10-line branch. Cost is ~$0.6 / $0.8.
+
+  Cerebras-hosted Llama 3.3 70B. Same idea, even faster (sub-200ms TTFB), similar pricing. Less battle-tested in pipecat.
+
+  Worth knowing about, less compelling for your case
+
+  Gemini 2.5 Flash / Flash-Lite. Pipecat has the service; multilingual is strong; TTFB is ~0.5–0.8s — competitive with Haiku 4.5, not noticeably faster.
+   Useful as a third opinion on persona behavior, not as a latency win.
+
+  My suggestion for an A/B sweep
+
+  Make four persona copies with active: true:
+
+  - inigo_haiku.json — anthropic:claude-haiku-4-5 (your current baseline)
+  - inigo_4omini.json — openai:gpt-4o-mini
+  - inigo_41mini.json — openai:gpt-4.1-mini
+  - inigo_41nano.json — openai:gpt-4.1-nano
+
+  Same system prompt, same TTS voice. Do one short FR call on each, open them in the dashboard, compare the Response latency block. That's a 15-minute
+  experiment, costs cents, and gives you a real latency × quality matrix.
+
+  If after that you're still chasing latency, say the word and I'll wire Groq into build_llm — that's where you'd realistically break under 800ms on a
+  14k-char prompt.
+
+✻ Sautéed for 28s
+
+
+
 # Next
 
 - costs tracing, cost estimation

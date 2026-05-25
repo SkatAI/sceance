@@ -15,12 +15,15 @@ import asyncio
 import json
 import os
 import time
+import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -46,9 +49,10 @@ def _cleanup_task(task: asyncio.Task) -> None:
     _active_sessions.discard(task)
     if task.cancelled():
         return
-    exc = task.exception()
-    if exc is not None:
-        logger.exception("Bot task failed", exc_info=exc)
+    try:
+        task.result()
+    except Exception:
+        logger.exception("Bot task failed")
 
 
 async def _create_daily_room(client: httpx.AsyncClient) -> dict:
@@ -117,6 +121,11 @@ async def health():
     return {"ok": True, "active_sessions": len(_active_sessions)}
 
 
+@app.get("/dashboard")
+async def dashboard():
+    return RedirectResponse(url="/dashboard.html")
+
+
 @app.get("/agents")
 async def list_agents():
     agents = []
@@ -175,6 +184,241 @@ async def start_session(body: StartSessionBody):
     logger.info(f"Spawned bot for room {room_name} (active={len(_active_sessions)})")
 
     return {"room_url": room_url, "token": user_token}
+
+
+# ----- Dashboard API -------------------------------------------------------
+
+def _iso(dt: datetime | None) -> str | None:
+    return dt.isoformat() if dt else None
+
+
+def _quantile(sorted_vals: list[float], q: float) -> float | None:
+    """Linear-interp quantile. q in [0, 1]. Returns None for empty input."""
+    if not sorted_vals:
+        return None
+    if len(sorted_vals) == 1:
+        return sorted_vals[0]
+    pos = q * (len(sorted_vals) - 1)
+    lo = int(pos)
+    hi = min(lo + 1, len(sorted_vals) - 1)
+    frac = pos - lo
+    return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * frac
+
+
+def _pair_response_latencies(events: list[dict]) -> list[float]:
+    """Pair each user_stopped_speaking with the next bot_started_speaking.
+
+    Events are assumed time-ordered. If the user speaks twice without the
+    bot answering, the older pending stop is overwritten (we always pair
+    against the most recent unanswered user stop).
+    """
+    out: list[float] = []
+    pending: int | None = None
+    for ev in events:
+        kind = ev["kind"]
+        ts = ev["timestamp_ns"]
+        if kind == "user_stopped_speaking":
+            pending = ts
+        elif kind == "bot_started_speaking" and pending is not None:
+            out.append((ts - pending) / 1e9)
+            pending = None
+    return out
+
+
+@app.get("/api/aggregate")
+async def api_aggregate(days: int = Query(7, ge=1, le=365)):
+    pool = app.state.db_pool
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT
+              count(*)                                                       AS total_sessions,
+              count(*) FILTER (WHERE ended_at IS NOT NULL)                   AS finished_sessions,
+              coalesce(sum(extract(epoch FROM (ended_at - started_at))), 0)  AS total_duration_s,
+              coalesce(sum(total_prompt_tokens), 0)                          AS prompt_tokens,
+              coalesce(sum(total_completion_tokens), 0)                      AS completion_tokens,
+              coalesce(sum(total_cache_read_tokens), 0)                      AS cache_read_tokens,
+              coalesce(sum(total_cache_creation_tokens), 0)                  AS cache_creation_tokens,
+              coalesce(sum(total_tts_chars), 0)                              AS tts_chars
+            FROM sessions
+            WHERE started_at >= $1
+            """,
+            since,
+        )
+        ttfb = await conn.fetch(
+            """
+            SELECT processor, avg(value_num) AS avg_ttfb, count(*) AS n
+            FROM metrics m
+            JOIN sessions s ON s.id = m.session_id
+            WHERE m.kind = 'ttfb' AND s.started_at >= $1
+            GROUP BY processor
+            ORDER BY processor
+            """,
+            since,
+        )
+    return {
+        "since": _iso(since),
+        "days": days,
+        "sessions": dict(row),
+        "ttfb": [
+            {"processor": r["processor"], "avg_ttfb": float(r["avg_ttfb"]), "n": r["n"]}
+            for r in ttfb
+        ],
+    }
+
+
+@app.get("/api/sessions")
+async def api_sessions(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    pool = app.state.db_pool
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT s.id, s.persona_name, s.lang, s.started_at, s.ended_at,
+                   extract(epoch FROM (s.ended_at - s.started_at)) AS duration_s,
+                   s.total_prompt_tokens, s.total_completion_tokens,
+                   s.total_cache_read_tokens, s.total_cache_creation_tokens,
+                   s.total_tts_chars,
+                   (SELECT count(*) FROM messages WHERE session_id = s.id) AS msg_count
+            FROM sessions s
+            ORDER BY s.started_at DESC
+            LIMIT $1 OFFSET $2
+            """,
+            limit, offset,
+        )
+        total = await conn.fetchval("SELECT count(*) FROM sessions")
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "sessions": [
+            {
+                "id": str(r["id"]),
+                "persona_name": r["persona_name"],
+                "lang": r["lang"],
+                "started_at": _iso(r["started_at"]),
+                "ended_at": _iso(r["ended_at"]),
+                "duration_s": float(r["duration_s"]) if r["duration_s"] is not None else None,
+                "prompt_tokens": r["total_prompt_tokens"],
+                "completion_tokens": r["total_completion_tokens"],
+                "cache_read_tokens": r["total_cache_read_tokens"],
+                "cache_creation_tokens": r["total_cache_creation_tokens"],
+                "tts_chars": r["total_tts_chars"],
+                "msg_count": r["msg_count"],
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.get("/api/sessions/{session_id}")
+async def api_session_detail(session_id: str):
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="bad_uuid")
+    pool = app.state.db_pool
+    async with pool.acquire() as conn:
+        s = await conn.fetchrow(
+            """
+            SELECT id, persona_name, persona_json, lang, started_at, ended_at,
+                   extract(epoch FROM (ended_at - started_at)) AS duration_s,
+                   total_prompt_tokens, total_completion_tokens,
+                   total_cache_read_tokens, total_cache_creation_tokens,
+                   total_tts_chars
+            FROM sessions WHERE id = $1
+            """,
+            sid,
+        )
+        if s is None:
+            raise HTTPException(status_code=404, detail="session_not_found")
+        messages = await conn.fetch(
+            "SELECT role, text, language, recorded_at FROM messages "
+            "WHERE session_id = $1 ORDER BY id",
+            sid,
+        )
+        metrics = await conn.fetch(
+            """
+            SELECT processor, kind,
+                   count(*)              AS n,
+                   avg(value_num)        AS avg_value,
+                   sum(value_num)        AS sum_value
+            FROM metrics
+            WHERE session_id = $1
+            GROUP BY processor, kind
+            ORDER BY processor, kind
+            """,
+            sid,
+        )
+        turn_events = await conn.fetch(
+            """
+            SELECT kind, timestamp_ns FROM events
+            WHERE session_id = $1
+              AND kind IN ('user_stopped_speaking', 'bot_started_speaking')
+            ORDER BY timestamp_ns
+            """,
+            sid,
+        )
+
+    # Per-turn user→bot response latency.
+    latencies = _pair_response_latencies([dict(r) for r in turn_events])
+    sorted_l = sorted(latencies)
+    response = {
+        "count": len(latencies),
+        "mean": (sum(latencies) / len(latencies)) if latencies else None,
+        "median": _quantile(sorted_l, 0.5),
+        "p90": _quantile(sorted_l, 0.9),
+        "max": max(latencies) if latencies else None,
+        "per_turn": [
+            {"turn": i + 1, "latency_s": v} for i, v in enumerate(latencies)
+        ],
+    }
+    persona = s["persona_json"]
+    if isinstance(persona, str):
+        persona = json.loads(persona)
+    return {
+        "id": str(s["id"]),
+        "persona_name": s["persona_name"],
+        "persona": {
+            "name": persona.get("name"),
+            "lang": persona.get("lang"),
+            "llm_model": persona.get("llm_model"),
+            "tts_voice_id": persona.get("tts_voice_id"),
+            "description": persona.get("description"),
+        } if isinstance(persona, dict) else None,
+        "lang": s["lang"],
+        "started_at": _iso(s["started_at"]),
+        "ended_at": _iso(s["ended_at"]),
+        "duration_s": float(s["duration_s"]) if s["duration_s"] is not None else None,
+        "prompt_tokens": s["total_prompt_tokens"],
+        "completion_tokens": s["total_completion_tokens"],
+        "cache_read_tokens": s["total_cache_read_tokens"],
+        "cache_creation_tokens": s["total_cache_creation_tokens"],
+        "tts_chars": s["total_tts_chars"],
+        "messages": [
+            {
+                "role": m["role"],
+                "text": m["text"],
+                "language": m["language"],
+                "recorded_at": _iso(m["recorded_at"]),
+            }
+            for m in messages
+        ],
+        "metrics": [
+            {
+                "processor": m["processor"],
+                "kind": m["kind"],
+                "n": m["n"],
+                "avg": float(m["avg_value"]) if m["avg_value"] is not None else None,
+                "sum": float(m["sum_value"]) if m["sum_value"] is not None else None,
+            }
+            for m in metrics
+        ],
+        "response_latency": response,
+    }
 
 
 # Mount static last so /health and /start-session take precedence.

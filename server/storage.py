@@ -18,11 +18,17 @@ async def create_pool() -> asyncpg.Pool:
     url = os.getenv("SUPABASE_DB_URL", "").strip()
     if not url:
         raise RuntimeError("SUPABASE_DB_URL is not set")
+    # statement_cache_size=0 is required when connecting through Supabase's
+    # Supavisor / pgbouncer pooler (transaction mode). Without it, asyncpg's
+    # per-connection prepared-statement names collide across recycled sessions:
+    #   DuplicatePreparedStatementError: prepared statement "__asyncpg_stmt_1__"
+    #   already exists
     pool = await asyncpg.create_pool(
         dsn=url,
         min_size=1,
         max_size=int(os.getenv("SUPABASE_POOL_MAX", "8")),
         command_timeout=10,
+        statement_cache_size=0,
     )
     logger.info("Supabase pool created")
     return pool
