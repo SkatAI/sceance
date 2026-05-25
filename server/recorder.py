@@ -33,9 +33,10 @@ def _utcnow() -> datetime:
 class SessionRecorder:
     """Owns a session row and a background drain loop for child rows."""
 
-    def __init__(self, pool: asyncpg.Pool, persona: dict):
+    def __init__(self, pool: asyncpg.Pool, persona: dict, user_id: str | None = None):
         self._pool = pool
         self._persona = persona
+        self._user_id = uuid.UUID(user_id) if user_id else None
         self.session_id: uuid.UUID = uuid.uuid4()
         self._queue: asyncio.Queue[tuple[str, dict] | None] = asyncio.Queue(maxsize=QUEUE_MAX)
         self._drain_task: asyncio.Task | None = None
@@ -54,14 +55,15 @@ class SessionRecorder:
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO sessions (id, persona_name, persona_json, lang, started_at)
-                VALUES ($1, $2, $3::jsonb, $4, $5)
+                INSERT INTO sessions (id, persona_name, persona_json, lang, started_at, user_id)
+                VALUES ($1, $2, $3::jsonb, $4, $5, $6)
                 """,
                 self.session_id,
                 self._persona.get("name"),
                 json.dumps(self._persona),
                 self._persona.get("lang"),
                 _utcnow(),
+                self._user_id,
             )
         self._drain_task = asyncio.create_task(self._drain_loop())
         logger.info(f"SessionRecorder started for session {self.session_id}")

@@ -22,13 +22,14 @@ from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
+from auth import CurrentUser, get_current_user, require_admin
 from bot import run_daily_bot
 from storage import close_pool, create_pool
 
@@ -112,8 +113,27 @@ app.add_middleware(
     ],
     allow_credentials=False,
     allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    allow_headers=["*", "Authorization"],
 )
+
+
+@app.get("/api/config")
+async def api_config():
+    """Public Supabase config consumed by the browser to initialize supabase-js."""
+    return {
+        "supabase_url": os.getenv("SUPABASE_URL", ""),
+        "supabase_anon_key": os.getenv("SUPABASE_KEY", ""),
+    }
+
+
+@app.get("/api/me")
+async def api_me(user: CurrentUser = Depends(get_current_user)):
+    return {
+        "id": user.id,
+        "email": user.email,
+        "username": user.username,
+        "is_admin": user.is_admin,
+    }
 
 
 @app.get("/health")
@@ -152,7 +172,10 @@ class StartSessionBody(BaseModel):
 
 
 @app.post("/start-session")
-async def start_session(body: StartSessionBody):
+async def start_session(
+    body: StartSessionBody,
+    user: CurrentUser = Depends(get_current_user),
+):
     agent_name = (body.agent or "").strip()
     if not agent_name:
         raise HTTPException(status_code=400, detail="agent_required")
@@ -177,7 +200,7 @@ async def start_session(body: StartSessionBody):
             raise HTTPException(status_code=502, detail=f"daily_error: {e}")
 
     task = asyncio.create_task(
-        run_daily_bot(room_url, bot_token, agent_name, app.state.db_pool)
+        run_daily_bot(room_url, bot_token, agent_name, app.state.db_pool, user_id=user.id)
     )
     _active_sessions.add(task)
     task.add_done_callback(_cleanup_task)
@@ -226,7 +249,10 @@ def _pair_response_latencies(events: list[dict]) -> list[float]:
 
 
 @app.get("/api/aggregate")
-async def api_aggregate(days: int = Query(7, ge=1, le=365)):
+async def api_aggregate(
+    days: int = Query(7, ge=1, le=365),
+    _admin: CurrentUser = Depends(require_admin),
+):
     pool = app.state.db_pool
     since = datetime.now(timezone.utc) - timedelta(days=days)
     async with pool.acquire() as conn:
@@ -272,6 +298,7 @@ async def api_aggregate(days: int = Query(7, ge=1, le=365)):
 async def api_sessions(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    _admin: CurrentUser = Depends(require_admin),
 ):
     pool = app.state.db_pool
     async with pool.acquire() as conn:
@@ -315,7 +342,10 @@ async def api_sessions(
 
 
 @app.get("/api/sessions/{session_id}")
-async def api_session_detail(session_id: str):
+async def api_session_detail(
+    session_id: str,
+    _admin: CurrentUser = Depends(require_admin),
+):
     try:
         sid = uuid.UUID(session_id)
     except ValueError:

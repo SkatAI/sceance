@@ -1,0 +1,116 @@
+"""Supabase JWT verification and per-request user lookup.
+
+The browser uses @supabase/supabase-js for magic-link sign-in. It sends the
+access_token as `Authorization: Bearer <jwt>`. We validate the token against
+Supabase's JWKS, then look up the matching `profiles` row to get the username
+and admin flag the app needs.
+
+JWKS is fetched once on first use and cached. Supabase rotates keys rarely;
+restart the process if you ever need to force a refresh.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+import httpx
+import jwt
+from fastapi import Depends, Header, HTTPException, Request
+from jwt import PyJWKClient
+from loguru import logger
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip()
+_JWKS_URL = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json" if SUPABASE_URL else ""
+_AUDIENCE = "authenticated"
+
+_jwks_client: PyJWKClient | None = None
+
+
+def _get_jwks_client() -> PyJWKClient | None:
+    """Lazy JWKS client. Returns None if SUPABASE_URL isn't set or JWKS is empty
+    (older Supabase projects sign with the legacy HS256 shared secret instead)."""
+    global _jwks_client
+    if _jwks_client is not None:
+        return _jwks_client
+    if not _JWKS_URL:
+        return None
+    try:
+        r = httpx.get(_JWKS_URL, timeout=5.0)
+        r.raise_for_status()
+        if not r.json().get("keys"):
+            return None
+    except httpx.HTTPError as e:
+        logger.warning(f"Could not fetch Supabase JWKS at {_JWKS_URL}: {e}")
+        return None
+    _jwks_client = PyJWKClient(_JWKS_URL, cache_keys=True)
+    return _jwks_client
+
+
+def verify_jwt(token: str) -> dict:
+    """Validate a Supabase access token. Raises 401 on any failure."""
+    client = _get_jwks_client()
+    try:
+        if client is not None:
+            signing_key = client.get_signing_key_from_jwt(token).key
+            return jwt.decode(
+                token,
+                signing_key,
+                algorithms=["RS256", "ES256"],
+                audience=_AUDIENCE,
+            )
+        if not SUPABASE_JWT_SECRET:
+            raise RuntimeError("no JWKS available and SUPABASE_JWT_SECRET unset")
+        return jwt.decode(
+            token,
+            SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            audience=_AUDIENCE,
+        )
+    except jwt.PyJWTError as e:
+        raise HTTPException(status_code=401, detail=f"invalid_token: {e}") from e
+    except Exception as e:
+        logger.exception("JWT verify failed")
+        raise HTTPException(status_code=401, detail="auth_unavailable") from e
+
+
+@dataclass(frozen=True)
+class CurrentUser:
+    id: str
+    email: str
+    username: str
+    is_admin: bool
+
+
+async def get_current_user(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> CurrentUser:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="missing_bearer_token")
+    token = authorization.split(" ", 1)[1].strip()
+    claims = verify_jwt(token)
+    user_id = claims.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="token_missing_sub")
+    pool = request.app.state.db_pool
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, email, username, is_admin FROM profiles WHERE id = $1",
+            user_id,
+        )
+    if row is None:
+        raise HTTPException(status_code=403, detail="profile_missing")
+    return CurrentUser(
+        id=str(row["id"]),
+        email=row["email"],
+        username=row["username"],
+        is_admin=bool(row["is_admin"]),
+    )
+
+
+async def require_admin(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="admin_only")
+    return user

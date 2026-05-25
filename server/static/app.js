@@ -1,14 +1,38 @@
-"use strict";
+// Sceance — landing page client.
+//
+// Auth: Supabase magic-link OTP. Session is persisted by supabase-js in
+// localStorage and auto-refreshed; we attach the access_token as a Bearer
+// header to /start-session so the FastAPI side can attribute the séance.
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const agentsEl = document.getElementById("agents");
 const hangupBtn = document.getElementById("hangup-btn");
 const statusEl = document.getElementById("status");
 
+const authForm = document.getElementById("auth-form");
+const authLoggedIn = document.getElementById("auth-logged-in");
+const authUsernameInput = document.getElementById("auth-username-input");
+const authEmailInput = document.getElementById("auth-email-input");
+const authSubmitBtn = document.getElementById("auth-submit");
+const authStatusEl = document.getElementById("auth-status");
+const authUsernameEl = document.getElementById("auth-username");
+const authDashboardLink = document.getElementById("auth-dashboard-link");
+const authLogoutBtn = document.getElementById("auth-logout");
+
 let callObject = null;
+let supabase = null;
+let currentUser = null;
 
 function setStatus(text, cls) {
   statusEl.textContent = text;
   statusEl.className = `status ${cls}`;
+  statusEl.classList.remove("hidden");
+}
+
+function setAuthStatus(text, cls = "idle") {
+  authStatusEl.textContent = text || "";
+  authStatusEl.className = `status ${cls}`;
 }
 
 function showAgents() {
@@ -79,13 +103,30 @@ async function startSession(agentId) {
   setAgentButtonsDisabled(true);
   setStatus("starting", "connecting");
 
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    setStatus("please sign in first", "error");
+    setAgentButtonsDisabled(false);
+    renderAuthState(null);
+    return;
+  }
+
   let body;
   try {
     const r = await fetch("/start-session", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session.access_token}`,
+      },
       body: JSON.stringify({ agent: agentId }),
     });
+    if (r.status === 401 || r.status === 403) {
+      setStatus("session expired — please sign in again", "error");
+      setAgentButtonsDisabled(false);
+      await supabase.auth.signOut();
+      return;
+    }
     if (r.status === 429) {
       setStatus("the agent is busy — try again in a moment", "error");
       setAgentButtonsDisabled(false);
@@ -121,8 +162,6 @@ async function startSession(agentId) {
     console.log("participant joined", ev.participant?.user_name);
   });
 
-  // In createCallObject mode Daily does NOT auto-attach remote audio
-  // to a media element — we have to do it ourselves or nothing plays.
   callObject.on("track-started", (ev) => {
     if (!ev.track || ev.track.kind !== "audio") return;
     if (ev.participant?.local) return;
@@ -197,4 +236,103 @@ window.addEventListener("beforeunload", () => {
   }
 });
 
-loadAgents();
+// ─── Auth ───────────────────────────────────────────────────────────
+
+async function fetchMe(session) {
+  const r = await fetch("/api/me", {
+    headers: { "Authorization": `Bearer ${session.access_token}` },
+  });
+  if (!r.ok) return null;
+  return r.json();
+}
+
+function renderAuthState(me) {
+  currentUser = me;
+  if (me) {
+    authForm.classList.add("hidden");
+    authLoggedIn.classList.remove("hidden");
+    authUsernameEl.textContent = me.username;
+    authDashboardLink.classList.toggle("hidden", !me.is_admin);
+    agentsEl.classList.remove("hidden");
+    loadAgents();
+  } else {
+    authForm.classList.remove("hidden");
+    authLoggedIn.classList.add("hidden");
+    agentsEl.classList.add("hidden");
+    setAuthStatus("");
+  }
+}
+
+authForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const username = authUsernameInput.value.trim();
+  const email = authEmailInput.value.trim();
+  if (!username || !email) return;
+  authSubmitBtn.disabled = true;
+  setAuthStatus("sending magic link…", "connecting");
+  try {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        data: { username },
+        emailRedirectTo: window.location.origin + "/",
+      },
+    });
+    if (error) {
+      setAuthStatus(error.message, "error");
+    } else {
+      setAuthStatus(`check ${email} — the link will sign you in.`, "connected");
+    }
+  } catch (err) {
+    console.error(err);
+    setAuthStatus("could not reach the auth server", "error");
+  } finally {
+    authSubmitBtn.disabled = false;
+  }
+});
+
+authLogoutBtn.addEventListener("click", async () => {
+  await supabase.auth.signOut();
+});
+
+async function bootAuth() {
+  let cfg;
+  try {
+    cfg = await (await fetch("/api/config")).json();
+  } catch (e) {
+    console.error(e);
+    setAuthStatus("could not load config", "error");
+    return;
+  }
+  if (!cfg.supabase_url || !cfg.supabase_anon_key) {
+    setAuthStatus("auth not configured on the server", "error");
+    return;
+  }
+  supabase = createClient(cfg.supabase_url, cfg.supabase_anon_key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storageKey: "sceance-auth",
+    },
+  });
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) {
+    const me = await fetchMe(session);
+    renderAuthState(me);
+  } else {
+    renderAuthState(null);
+  }
+
+  supabase.auth.onAuthStateChange(async (_event, session) => {
+    if (session) {
+      const me = await fetchMe(session);
+      renderAuthState(me);
+    } else {
+      renderAuthState(null);
+    }
+  });
+}
+
+bootAuth();

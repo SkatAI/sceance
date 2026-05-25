@@ -47,3 +47,13 @@ Entry point is `pipecat.runner.run.main`, which picks Daily or SmallWebRTC based
 ## Secrets
 
 `server/.env` holds API keys (Deepgram, Cartesia, OpenAI). It is gitignored. **The current `.env` contains live keys committed in plaintext from the bootstrap — rotate before sharing the repo publicly.**
+
+## Auth (Supabase magic links)
+
+The landing page gates session creation behind a logged-in user, and `/dashboard` + `/api/*` are admin-only. Wiring:
+
+- Migration `server/migrations/002_auth.sql` adds a `profiles` table (1:1 with `auth.users`), a signup trigger, and `sessions.user_id`. Apply with `psql "$SUPABASE_DB_URL" -f server/migrations/002_auth.sql`.
+- In the Supabase dashboard: enable the **Email** auth provider, set the site URL + redirect allowlist (e.g. `http://localhost:8080`, `https://voice.alexisperrier.com`), and confirm the "Magic Link" template is used.
+- `server/auth.py` verifies the Supabase access token (JWKS-first, with HS256 fallback if you set `SUPABASE_JWT_SECRET`). `get_current_user` / `require_admin` are FastAPI deps.
+- Promote a user to admin manually: `update profiles set is_admin = true where username = '…';`.
+- Frontend uses `@supabase/supabase-js` from ESM CDN; the page fetches `/api/config` for public Supabase URL + anon key, then handles magic-link signin and session persistence in `localStorage`.

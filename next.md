@@ -1,5 +1,6 @@
-     /plugin install frontend-design@claude-plugins-official
 
+The Supabase project console must have Email provider enabled and the site URL + redirect allowlist set to the deploy origin (http://localhost:8080,
+  https://voice.alexisperrier.com). Confirmation email template should be the "Magic Link" template.
 
 Already supported (no code change — just edit the persona)
 

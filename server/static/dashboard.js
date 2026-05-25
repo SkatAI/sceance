@@ -1,6 +1,9 @@
-"use strict";
-
 /* Sceance Ledger — dashboard for recent séances. */
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+let supabase = null;
+let accessToken = null;
 
 const state = {
   days: 7,
@@ -63,7 +66,12 @@ function shortProcessor(p) {
 // ─── Fetchers ────────────────────────────────────────────────────────
 
 async function getJSON(url) {
-  const r = await fetch(url);
+  const headers = accessToken ? { "Authorization": `Bearer ${accessToken}` } : {};
+  const r = await fetch(url, { headers });
+  if (r.status === 401 || r.status === 403) {
+    window.location.href = "/";
+    throw new Error(`${url} → ${r.status}`);
+  }
   if (!r.ok) throw new Error(`${url} → ${r.status}`);
   return r.json();
 }
@@ -455,6 +463,55 @@ function bindPeriod() {
 
 // ─── Boot ───────────────────────────────────────────────────────────
 
-bindPeriod();
-loadAggregate();
-loadSessions();
+async function boot() {
+  let cfg;
+  try {
+    cfg = await (await fetch("/api/config")).json();
+  } catch (e) {
+    document.body.innerHTML = "<p style='padding:2rem'>could not load config</p>";
+    return;
+  }
+  if (!cfg.supabase_url || !cfg.supabase_anon_key) {
+    document.body.innerHTML = "<p style='padding:2rem'>auth not configured</p>";
+    return;
+  }
+  supabase = createClient(cfg.supabase_url, cfg.supabase_anon_key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storageKey: "sceance-auth",
+    },
+  });
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    window.location.href = "/";
+    return;
+  }
+  accessToken = session.access_token;
+
+  // Verify admin via /api/me before showing anything.
+  const meRes = await fetch("/api/me", {
+    headers: { "Authorization": `Bearer ${accessToken}` },
+  });
+  if (!meRes.ok) {
+    window.location.href = "/";
+    return;
+  }
+  const me = await meRes.json();
+  if (!me.is_admin) {
+    window.location.href = "/";
+    return;
+  }
+
+  supabase.auth.onAuthStateChange((_e, s) => {
+    if (!s) window.location.href = "/";
+    else accessToken = s.access_token;
+  });
+
+  bindPeriod();
+  loadAggregate();
+  loadSessions();
+}
+
+boot();

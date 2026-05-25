@@ -109,7 +109,12 @@ def build_llm(persona: dict):
     raise ValueError(f"Unknown LLM provider in persona: {provider!r}")
 
 
-async def run_bot(transport: BaseTransport, agent_name: str, pool: asyncpg.Pool):
+async def run_bot(
+    transport: BaseTransport,
+    agent_name: str,
+    pool: asyncpg.Pool,
+    user_id: str | None = None,
+):
     """Main bot logic."""
     persona = load_persona(agent_name)
     logger.info(f"Starting bot with persona: {persona.get('name', '<unnamed>')}")
@@ -165,7 +170,7 @@ async def run_bot(transport: BaseTransport, agent_name: str, pool: asyncpg.Pool)
     ])
 
 
-    recorder = SessionRecorder(pool, persona)
+    recorder = SessionRecorder(pool, persona, user_id=user_id)
     await recorder.start()
     logger.info(f"Recording session {recorder.session_id} to Supabase")
 
@@ -220,7 +225,13 @@ async def run_bot(transport: BaseTransport, agent_name: str, pool: asyncpg.Pool)
     await runner.run(task)
 
 
-async def run_daily_bot(room_url: str, token: str, agent_name: str, pool: asyncpg.Pool):
+async def run_daily_bot(
+    room_url: str,
+    token: str,
+    agent_name: str,
+    pool: asyncpg.Pool,
+    user_id: str | None = None,
+):
     """Join a Daily room as the bot. Used by server.py /start-session."""
     transport = DailyTransport(
         room_url,
@@ -231,7 +242,7 @@ async def run_daily_bot(room_url: str, token: str, agent_name: str, pool: asyncp
             audio_out_enabled=True,
         ),
     )
-    await run_bot(transport, agent_name, pool)
+    await run_bot(transport, agent_name, pool, user_id=user_id)
 
 
 async def bot(runner_args: RunnerArguments):
