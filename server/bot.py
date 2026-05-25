@@ -46,13 +46,14 @@ from pipecat.transports.base_transport import BaseTransport
 from loguru import logger
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 
-from db import SessionDB
+import asyncpg
+
 from observer import TranscriptObserver
+from recorder import SessionRecorder
 
 load_dotenv(override=True)
 
 PERSONAS_DIR = Path(__file__).parent.parent / "personas"
-DB_PATH = Path(__file__).parent / os.getenv("SCEANCE_DB", "sceance.db")
 
 
 def load_persona(agent_name: str) -> dict:
@@ -108,7 +109,7 @@ def build_llm(persona: dict):
     raise ValueError(f"Unknown LLM provider in persona: {provider!r}")
 
 
-async def run_bot(transport: BaseTransport, agent_name: str):
+async def run_bot(transport: BaseTransport, agent_name: str, pool: asyncpg.Pool):
     """Main bot logic."""
     persona = load_persona(agent_name)
     logger.info(f"Starting bot with persona: {persona.get('name', '<unnamed>')}")
@@ -164,8 +165,9 @@ async def run_bot(transport: BaseTransport, agent_name: str):
     ])
 
 
-    db = SessionDB(DB_PATH, persona)
-    logger.info(f"Recording session {db.session_id} to {DB_PATH}")
+    recorder = SessionRecorder(pool, persona)
+    await recorder.start()
+    logger.info(f"Recording session {recorder.session_id} to Supabase")
 
     task = PipelineTask(
         pipeline,
@@ -173,7 +175,7 @@ async def run_bot(transport: BaseTransport, agent_name: str):
             enable_metrics=True,
             enable_usage_metrics=True,
         ),
-        observers=[TranscriptObserver(db)],
+        observers=[TranscriptObserver(recorder)],
     )
 
     kicked_off = False
@@ -186,7 +188,7 @@ async def run_bot(transport: BaseTransport, agent_name: str):
         logger.info(f"Kicking off conversation via {source}")
         for msg in persona.get("opening_messages", []):
             context.add_message(msg)
-            db.add_message(role=msg.get("role", "system"), text=msg.get("content", ""))
+            recorder.record_message(role=msg.get("role", "system"), text=msg.get("content", ""))
         await task.queue_frames([LLMRunFrame()])
 
     # RTVI-aware clients (e.g. Pipecat React SDK) — keep for forward-compat.
@@ -208,7 +210,7 @@ async def run_bot(transport: BaseTransport, agent_name: str):
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
         logger.info("Client disconnected")
-        db.close()
+        await recorder.close()
         await task.cancel()
 
 
@@ -218,7 +220,7 @@ async def run_bot(transport: BaseTransport, agent_name: str):
     await runner.run(task)
 
 
-async def run_daily_bot(room_url: str, token: str, agent_name: str):
+async def run_daily_bot(room_url: str, token: str, agent_name: str, pool: asyncpg.Pool):
     """Join a Daily room as the bot. Used by server.py /start-session."""
     transport = DailyTransport(
         room_url,
@@ -229,7 +231,7 @@ async def run_daily_bot(room_url: str, token: str, agent_name: str):
             audio_out_enabled=True,
         ),
     )
-    await run_bot(transport, agent_name)
+    await run_bot(transport, agent_name, pool)
 
 
 async def bot(runner_args: RunnerArguments):
@@ -262,7 +264,13 @@ async def bot(runner_args: RunnerArguments):
             logger.error(f"Unsupported runner arguments type: {type(runner_args)}")
             return
 
-    await run_bot(transport, os.getenv("AGENT_NAME", ""))
+    from storage import close_pool, create_pool
+
+    pool = await create_pool()
+    try:
+        await run_bot(transport, os.getenv("AGENT_NAME", ""), pool)
+    finally:
+        await close_pool(pool)
 
 
 if __name__ == "__main__":

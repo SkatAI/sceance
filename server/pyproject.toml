@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pipecat-ai[anthropic,cartesia,daily,deepgram,openai,runner,silero,webrtc]>=1.2.1",
     "pipecatcloud",
+    "asyncpg>=0.29",
 ]
 
 [dependency-groups]

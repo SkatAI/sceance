@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from bot import run_daily_bot
+from storage import close_pool, create_pool
 
 load_dotenv(override=True)
 
@@ -85,10 +86,13 @@ async def lifespan(app: FastAPI):
     if not DAILY_API_KEY:
         logger.warning("DAILY_API_KEY is not set — /start-session will fail")
     logger.info(f"Static dir: {STATIC_DIR}, MAX_SESSIONS={MAX_SESSIONS}")
-    yield
-    # Cancel any active bot tasks on shutdown.
-    for t in list(_active_sessions):
-        t.cancel()
+    app.state.db_pool = await create_pool()
+    try:
+        yield
+    finally:
+        for t in list(_active_sessions):
+            t.cancel()
+        await close_pool(app.state.db_pool)
 
 
 app = FastAPI(lifespan=lifespan)
@@ -163,7 +167,9 @@ async def start_session(body: StartSessionBody):
             logger.exception("Daily REST call failed")
             raise HTTPException(status_code=502, detail=f"daily_error: {e}")
 
-    task = asyncio.create_task(run_daily_bot(room_url, bot_token, agent_name))
+    task = asyncio.create_task(
+        run_daily_bot(room_url, bot_token, agent_name, app.state.db_pool)
+    )
     _active_sessions.add(task)
     task.add_done_callback(_cleanup_task)
     logger.info(f"Spawned bot for room {room_name} (active={len(_active_sessions)})")

@@ -1,5 +1,33 @@
      /plugin install frontend-design@claude-plugins-official
 
+
+# Next
+
+- costs tracing, cost estimation
+- memory across sessions
+- monitoring
+- time limit per session
+- user credits
+- scripting for first caller
+- tests models and prompts and voices
+
+
+## Memory, monitoring, reporting
+
+- all transcript recorded and stored. with step timing. everything is logged
+- can be dumped into a log file, per session, and then parsed into a session sql table
+- after each session, report is produced. session length, recap, performance, costs
+
+## User account
+- user fills in first name and email, opens an account, asked to verify the email, remembered on browser
+- user can ask to delete all previous session informations
+- user session dashboard shows all previous sessions with recap, performance, costs
+
+
+
+
+## Other
+
 - time limit to 1mn if user not logged in
 - time limit to 5mn if user logged in
 - requires user email and name ?
