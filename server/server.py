@@ -32,12 +32,21 @@ from loguru import logger
 from auth import CurrentUser, get_current_user, require_admin
 from bot import run_daily_bot
 from storage import close_pool, create_pool
+from supabase_admin import (
+    admin_configured,
+    create_user,
+    generate_magiclink_token,
+    user_exists,
+)
 
 load_dotenv(override=True)
 
 DAILY_API_KEY = os.getenv("DAILY_API_KEY", "")
 DAILY_API_BASE = "https://api.daily.co/v1"
 MAX_SESSIONS = int(os.getenv("MAX_SESSIONS", "5"))
+# When true, an unrecognized email is auto-created on sign-in (local/dev). When
+# false (deployed), unknown emails are rejected as invite-only.
+OPEN_SIGNUP = os.getenv("OPEN_SIGNUP", "").strip().lower() in ("1", "true", "yes")
 ROOM_EXPIRY_SECONDS = 30 * 60  # 30 min
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -123,7 +132,37 @@ async def api_config():
     return {
         "supabase_url": os.getenv("SUPABASE_URL", ""),
         "supabase_anon_key": os.getenv("SUPABASE_KEY", ""),
+        "open_signup": OPEN_SIGNUP,
     }
+
+
+class LoginBody(BaseModel):
+    email: str
+
+
+@app.post("/api/auth/login")
+async def api_auth_login(body: LoginBody):
+    """Passwordless sign-in by email — no magic-link email is sent.
+
+    Returns a one-time `token_hash` the browser redeems with verifyOtp. Unknown
+    emails are auto-created when OPEN_SIGNUP is on, else rejected as invite-only.
+    """
+    email = (body.email or "").strip().lower()
+    if "@" not in email or len(email) < 3:
+        raise HTTPException(status_code=400, detail="invalid_email")
+    if not admin_configured():
+        raise HTTPException(status_code=500, detail="auth_admin_not_configured")
+
+    pool = app.state.db_pool
+    exists = await user_exists(pool, email)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        if not exists:
+            if not OPEN_SIGNUP:
+                raise HTTPException(status_code=403, detail="invite_only")
+            await create_user(client, email)
+        token_hash = await generate_magiclink_token(client, email)
+
+    return {"token_hash": token_hash, "type": "magiclink"}
 
 
 @app.get("/api/me")

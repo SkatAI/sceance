@@ -1,6 +1,9 @@
 // Sceance — landing page client.
 //
-// Auth: Supabase magic-link OTP. Session is persisted by supabase-js in
+// Auth: passwordless email sign-in. The browser posts the email to
+// /api/auth/login; the server (holding the service-role key) mints a one-time
+// token_hash without sending any email, which we redeem here via verifyOtp to
+// establish a real Supabase session. Session is persisted by supabase-js in
 // localStorage and auto-refreshed; we attach the access_token as a Bearer
 // header to /start-session so the FastAPI side can attribute the séance.
 
@@ -12,7 +15,6 @@ const statusEl = document.getElementById("status");
 
 const authForm = document.getElementById("auth-form");
 const authLoggedIn = document.getElementById("auth-logged-in");
-const authUsernameInput = document.getElementById("auth-username-input");
 const authEmailInput = document.getElementById("auth-email-input");
 const authSubmitBtn = document.getElementById("auth-submit");
 const authStatusEl = document.getElementById("auth-status");
@@ -265,24 +267,37 @@ function renderAuthState(me) {
 
 authForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const username = authUsernameInput.value.trim();
   const email = authEmailInput.value.trim();
-  if (!username || !email) return;
+  if (!email) return;
   authSubmitBtn.disabled = true;
-  setAuthStatus("sending magic link…", "connecting");
+  setAuthStatus("connecting…", "connecting");
   try {
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        data: { username },
-        emailRedirectTo: window.location.origin + "/",
-      },
+    const r = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
     });
+    if (r.status === 403) {
+      setAuthStatus(
+        "This is a private beta. Contact the website owner for an invite.",
+        "error",
+      );
+      return;
+    }
+    if (!r.ok) {
+      let detail = `error (${r.status})`;
+      try { detail = (await r.json()).detail || detail; } catch (_) {}
+      setAuthStatus(detail === "invalid_email" ? "that email looks off" : detail, "error");
+      return;
+    }
+    const { token_hash, type } = await r.json();
+    const { error } = await supabase.auth.verifyOtp({ token_hash, type });
     if (error) {
       setAuthStatus(error.message, "error");
-    } else {
-      setAuthStatus(`check ${email} — the link will sign you in.`, "connected");
+      return;
     }
+    // onAuthStateChange takes over from here (fetchMe + renderAuthState).
+    setAuthStatus("", "idle");
   } catch (err) {
     console.error(err);
     setAuthStatus("could not reach the auth server", "error");
