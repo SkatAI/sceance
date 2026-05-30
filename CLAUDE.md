@@ -48,12 +48,21 @@ Entry point is `pipecat.runner.run.main`, which picks Daily or SmallWebRTC based
 
 `server/.env` holds API keys (Deepgram, Cartesia, OpenAI). It is gitignored. **The current `.env` contains live keys committed in plaintext from the bootstrap — rotate before sharing the repo publicly.**
 
-## Auth (Supabase magic links)
+## Auth (passwordless email, no emails sent)
 
-The landing page gates session creation behind a logged-in user, and `/dashboard` + `/api/*` are admin-only. Wiring:
+The landing page gates session creation behind a logged-in user, and `/dashboard` + `/api/*` are admin-only. Sign-in is **email-only and passwordless** — to stay under the free Supabase plan's email quota, **no magic-link email is sent**. The user types an email and clicks **Connect**:
 
-- Migration `server/migrations/002_auth.sql` adds a `profiles` table (1:1 with `auth.users`), a signup trigger, and `sessions.user_id`. Apply with `psql "$SUPABASE_DB_URL" -f server/migrations/002_auth.sql`.
-- In the Supabase dashboard: enable the **Email** auth provider, set the site URL + redirect allowlist (e.g. `http://localhost:8080`, `https://voice.alexisperrier.com`), and confirm the "Magic Link" template is used.
+- `POST /api/auth/login {email}` (server-side, holds the service-role key) checks `auth.users` for the email.
+  - **Exists** → mints a one-time `token_hash` via GoTrue `admin/generate_link` (no email) and returns it.
+  - **Unknown + `OPEN_SIGNUP=true`** (local) → creates a pre-confirmed user via `admin/users`, then mints the token.
+  - **Unknown + `OPEN_SIGNUP` off** (deployed) → `403 invite_only`; the page shows "private beta, contact the owner for an invite." Add invitees manually in the Supabase dashboard.
+- The browser redeems the token with `supabase.auth.verifyOtp({ token_hash, type: 'magiclink' })` to get a real session — same JWTs `auth.py` already verifies.
+
+Wiring:
+
+- **Env vars** (`server/.env`): `SUPABASE_SERVICE_ROLE_KEY` (Supabase dashboard → Project Settings → API → `service_role` secret; server-only, never sent to the browser) and `OPEN_SIGNUP=true` locally (omit/false in `pcc-deploy.toml` for the deployed invite-only behavior).
+- `server/supabase_admin.py` holds the GoTrue admin REST helpers + the `auth.users` existence check (via the asyncpg pool).
+- Migration `server/migrations/002_auth.sql` adds a `profiles` table (1:1 with `auth.users`), a signup trigger (username defaults to the email local-part — no username field is collected anymore), and `sessions.user_id`. Apply with `psql "$SUPABASE_DB_URL" -f server/migrations/002_auth.sql`.
 - `server/auth.py` verifies the Supabase access token (JWKS-first, with HS256 fallback if you set `SUPABASE_JWT_SECRET`). `get_current_user` / `require_admin` are FastAPI deps.
 - Promote a user to admin manually: `update profiles set is_admin = true where username = '…';`.
-- Frontend uses `@supabase/supabase-js` from ESM CDN; the page fetches `/api/config` for public Supabase URL + anon key, then handles magic-link signin and session persistence in `localStorage`.
+- Frontend uses `@supabase/supabase-js` from ESM CDN; the page fetches `/api/config` for public Supabase URL + anon key (and `open_signup`), then drives the flow above and persists the session in `localStorage`.
