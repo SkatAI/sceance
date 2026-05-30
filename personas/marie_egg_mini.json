@@ -1,6 +1,6 @@
 {
   "name": "Yarden Mini",
-  "active": true,
+  "active": false,
   "llm_model": "openai:gpt-4.1-nano",
   "tts_voice_id": "ff857c8e-e7f9-4afd-af42-dce9f3c5ab02",
   "description": "A woman concerned about the price of eggs",

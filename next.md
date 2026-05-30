@@ -1,6 +1,61 @@
 
+Landing page positionning
+
+Let's find out. Let's talk!
+
+The decision making method the jesuits have refined for over 500 years, designed for the moment you're in.
+
+Ignatius of Loyola a 16th century Spanish soldier, spent his life on one question : what do you actually want ?
+Something brought you here even if you can't say what.
+Let's find out. Let's talk!
+
+
+The jesuitic method to understand what you actually want.
+Call up the counselor
+
+(AI inspired by igniatian discernement)
+
+
+
+The Jesuit method for understanding what you actually want.
+Something brought you here, even if you can't say what.
+Let's find out.  Call Inigo
+
+
+
+Tu es venu ici sans trop savoir pourquoi. C'est déjà un début.
+Une méthode vieille de cinq siècles pour mettre des mots sur ce que tu cherches.
+Appelle Ignace, parle-lui.
+
+
+You're not sure why you're here. Well, that's a start.
+The Jesuit method for putting words to what you're after.
+Call Inigo. Talk to him.
+
+Inigo is on the line.
+
+
+
+
+---
 The Supabase project console must have Email provider enabled and the site URL + redirect allowlist set to the deploy origin (http://localhost:8080,
   https://voice.alexisperrier.com). Confirmation email template should be the "Magic Link" template.
+
+
+  Verification
+
+ 1. Run 002_auth.sql against the Supabase project (via SQL editor or psql $SUPABASE_DB_URL).
+ 2. cd server && uv sync && uv run server.py (or the Make target).
+ 3. Visit http://localhost:8080:
+   - Confirm landing shows username+email form, agent picker hidden.
+   - Submit form → magic-link email arrives.
+   - Click link → redirected back to /, header now shows username + logout, agent picker visible.
+   - Start a session → bot connects as before.
+ 4. select id, user_id, persona_name from sessions order by started_at desc limit 1; → row has the user's user_id.
+ 5. Visit /dashboard while logged in as non-admin → bounced to /. /api/sessions returns 403.
+ 6. update profiles set is_admin = true where username = '…'; → reload / → dashboard link appears in header → /dashboard loads, /api/* returns 200.
+ 7. Reload the browser → still logged in (session restored from localStorage).
+ 8. Click logout → header reverts to logged-out form.
 
 Already supported (no code change — just edit the persona)
 
