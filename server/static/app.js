@@ -97,6 +97,7 @@ function renderAgents(agents) {
     if (agent.llm) rows.push(["Model", agent.llm]);
     if (agent.tts_provider) rows.push(["TTS", agent.tts_provider]);
     if (agent.lang) rows.push(["Lang", String(agent.lang).toUpperCase()]);
+    rows.push(["Memory", agent.memory === false ? "off" : "on"]);
     if (rows.length) {
       const meta = document.createElement("dl");
       meta.className = "agent-meta";

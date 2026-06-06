@@ -122,6 +122,7 @@ class Persona:
             "name": self.name,
             "description": self.description,
             "lang": self.lang,
+            "memory": self.memory,
             "voice_name": self.voice_name,
             "voice_description": self.voice_description,
             "llm": self.llm_description,
