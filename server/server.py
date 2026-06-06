@@ -31,6 +31,7 @@ from loguru import logger
 
 from auth import CurrentUser, get_current_user, require_admin
 from bot import run_daily_bot
+from personas import Persona, PersonaError
 from storage import close_pool, create_pool
 from supabase_admin import (
     admin_configured,
@@ -192,17 +193,13 @@ async def list_agents():
         try:
             with path.open() as f:
                 data = json.load(f)
-        except (OSError, json.JSONDecodeError) as e:
+            persona = Persona.from_dict(data, id=path.stem)
+        except (OSError, json.JSONDecodeError, PersonaError) as e:
             logger.warning(f"Skipping persona {path.name}: {e}")
             continue
-        if data.get("active") is not True:
+        if not persona.active:
             continue
-        agents.append({
-            "id": path.stem,
-            "name": data.get("name", path.stem),
-            "description": data.get("description", ""),
-            "lang": data.get("lang") or "en",
-        })
+        agents.append(persona.public())
     return {"agents": agents}
 
 
@@ -448,16 +445,28 @@ async def api_session_detail(
     persona = s["persona_json"]
     if isinstance(persona, str):
         persona = json.loads(persona)
+    persona_view = None
+    if isinstance(persona, dict):
+        try:
+            p = Persona.from_dict(persona)
+            persona_view = {
+                "name": p.name,
+                "lang": p.lang,
+                "llm_model": p.llm_model,
+                "llm": p.llm_description,
+                "tts_provider": p.tts_provider,
+                "tts_voice_id": p.voice_id,
+                "voice_name": p.voice_name,
+                "voice_description": p.voice_description,
+                "description": p.description,
+            }
+        except PersonaError:
+            # Legacy/flat snapshot from before the nested schema — return as-is.
+            persona_view = persona
     return {
         "id": str(s["id"]),
         "persona_name": s["persona_name"],
-        "persona": {
-            "name": persona.get("name"),
-            "lang": persona.get("lang"),
-            "llm_model": persona.get("llm_model"),
-            "tts_voice_id": persona.get("tts_voice_id"),
-            "description": persona.get("description"),
-        } if isinstance(persona, dict) else None,
+        "persona": persona_view,
         "lang": s["lang"],
         "started_at": _iso(s["started_at"]),
         "ended_at": _iso(s["ended_at"]),

@@ -27,7 +27,7 @@ The quickstart wiring is not the target stack. The plan:
 - LLM: Claude Sonnet as the persona brain, with Groq-hosted Llama / Gemini Flash as swappable fast alternatives.
 - TTS: ElevenLabs primary (its shared voice library is the casting pool for character personas), Cartesia as swappable low-latency alternative, Hume as a v2 wildcard for emotion-aware responses.
 - STT: stay on Deepgram.
-- Tracing: SQLite — per-turn STT/LLM/TTS latency split + transcript + persona version. Whisker + Tail for live debugging.
+- Tracing: Supabase Postgres — per-turn STT/LLM/TTS latency split + transcript + persona snapshot. Whisker + Tail for live debugging.
 - Frontend: React + Vite, two surfaces — the séance (player) and the dashboard (operator CRUD over personas + session browser).
 
 Build the LLM and TTS services as swappable from the start.

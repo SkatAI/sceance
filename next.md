@@ -1,5 +1,22 @@
+# Jun 6 & 7
 
-Landing page positionning
+- ran out of credits on cartesia, need to find other voice provider, or add credits. voice gen is expensive
+- flow is not fluid. lots of waiting, sometimes stalling. need to stabilize
+- I want to see the transcript of the conversation, it helps
+- I want to hear some connection sound as the agent starts the session
+
+
+end of session :
+- The platform is solid. basically works.
+- I have a version ready to beta test
+- I have a test plan. what do I want to test for the next phase
+
+how do I evaluate the quality of the conversation ?
+
+I should be able to start new conversation with or without the memory
+
+
+# Landing page positionning
 
 Let's find out. Let's talk!
 

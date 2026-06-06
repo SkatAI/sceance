@@ -91,6 +91,26 @@ function renderAgents(agents) {
       card.appendChild(desc);
     }
 
+    const rows = [];
+    const voice = [agent.voice_name, agent.voice_description].filter(Boolean).join(" — ");
+    if (voice) rows.push(["Voice", voice]);
+    if (agent.llm) rows.push(["Model", agent.llm]);
+    if (agent.tts_provider) rows.push(["TTS", agent.tts_provider]);
+    if (agent.lang) rows.push(["Lang", String(agent.lang).toUpperCase()]);
+    if (rows.length) {
+      const meta = document.createElement("dl");
+      meta.className = "agent-meta";
+      for (const [label, value] of rows) {
+        const k = document.createElement("dt");
+        k.textContent = label;
+        const v = document.createElement("dd");
+        v.textContent = value;
+        meta.appendChild(k);
+        meta.appendChild(v);
+      }
+      card.appendChild(meta);
+    }
+
     const btn = document.createElement("button");
     btn.className = "primary";
     btn.textContent = talkLabel(agent);

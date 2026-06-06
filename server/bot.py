@@ -28,9 +28,7 @@ from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.runner.types import DailyRunnerArguments
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from dotenv import load_dotenv
-import json
 import os
-from pathlib import Path
 from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair, LLMUserAggregatorParams
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.runner.types import RunnerArguments
@@ -50,11 +48,10 @@ import asyncpg
 
 from memory import load_memory_brief
 from observer import TranscriptObserver
+from personas import Persona, load_persona
 from recorder import SessionRecorder
 
 load_dotenv(override=True)
-
-PERSONAS_DIR = Path(__file__).parent.parent / "personas"
 
 SHARED_SYSTEM_APPENDIX = """
 
@@ -71,33 +68,37 @@ You will receive a memory brief at the start of each conversation, wrapped in a
 - Never read the memory brief aloud, paraphrase it verbatim, or quote it.
 """
 
-
-def load_persona(agent_name: str) -> dict:
-    agent_name = (agent_name or "").strip()
-    if not agent_name:
-        raise RuntimeError("agent_name is required")
-    persona_path = PERSONAS_DIR / f"{agent_name}.json"
-    if not persona_path.exists():
-        raise FileNotFoundError(f"Persona file not found: {persona_path}")
-    with persona_path.open() as f:
-        return json.load(f)
+# Map persona `lang` codes to language names for the output-language directive.
+_LANG_NAMES = {"en": "English", "fr": "French"}
 
 
-def build_llm(persona: dict):
-    """Build the right pipecat LLM service for a persona.
+def _language_directive(lang: str) -> str:
+    """Pin the persona's spoken language so prior-session memory (which may be in
+    another language) or a user speaking something else can't flip it. `lang`
+    only steered STT/TTS before; the LLM had no language instruction at all."""
+    name = _LANG_NAMES.get(lang.split("-")[0].lower(), "English")
+    return (
+        f"\n\n— Language —\n"
+        f"Always speak {name}. Every response must be in {name}, regardless of the "
+        f"language of the memory brief, earlier context, or anything the user says. "
+        f"The memory brief is internal notes that may be in another language — never "
+        f"mirror its language. If the user speaks another language, gently continue "
+        f"in {name}."
+    )
 
-    Persona `llm_model` is namespaced as `<provider>:<model>` —
-    e.g. `openai:gpt-4.1`, `anthropic:claude-sonnet-4-5`.
-    Bare model strings (no colon) are assumed to be OpenAI for back-compat.
-    """
-    raw = persona["llm_model"]
-    if ":" in raw:
-        provider, model = raw.split(":", 1)
-    else:
-        provider, model = "openai", raw
-    provider = provider.lower()
-    system_instruction = persona["system_instruction"] + SHARED_SYSTEM_APPENDIX
-    temperature = persona.get("temperature")  # None → use provider default
+
+def build_llm(persona: Persona):
+    """Build the right pipecat LLM service for a persona, routed on
+    `persona.llm_provider` (`openai` / `anthropic`)."""
+    provider = persona.llm_provider
+    model = persona.llm_model
+    lang = (persona.lang or "en").lower()
+    system_instruction = (
+        persona.system_prompt
+        + SHARED_SYSTEM_APPENDIX
+        + _language_directive(lang)
+    )
+    temperature = persona.temperature  # None → use provider default
 
     if provider == "openai":
         openai_settings = {
@@ -125,6 +126,27 @@ def build_llm(persona: dict):
     raise ValueError(f"Unknown LLM provider in persona: {provider!r}")
 
 
+def build_tts(persona: Persona):
+    """Build the right pipecat TTS service for a persona, routed on
+    `persona.tts_provider`. Only `cartesia` is wired today; the seam is here
+    so ElevenLabs/Hume can slot in later (see notes.md intended stack)."""
+    provider = persona.tts_provider
+    lang = (persona.lang or "en").lower()
+
+    if provider == "cartesia":
+        cartesia_settings = {
+            "voice": persona.voice_id,
+            "language": lang,
+        }
+        if persona.tts_model:
+            cartesia_settings["model"] = persona.tts_model
+        return CartesiaTTSService(
+            api_key=os.getenv("CARTESIA_API_KEY"),
+            settings=CartesiaTTSService.Settings(**cartesia_settings),
+        )
+    raise ValueError(f"Unknown TTS provider in persona: {provider!r}")
+
+
 async def run_bot(
     transport: BaseTransport,
     agent_name: str,
@@ -133,12 +155,12 @@ async def run_bot(
 ):
     """Main bot logic."""
     persona = load_persona(agent_name)
-    logger.info(f"Starting bot with persona: {persona.get('name', '<unnamed>')}")
+    logger.info(f"Starting bot with persona: {persona.name}")
 
     # Speech-to-Text service — pick a model that supports the persona language.
-    # nova-3 is English-only; for non-English use nova-2.
-    lang = (persona.get("lang") or "en").lower()
-    stt_model = "nova-3" if lang.startswith("en") else "nova-2"
+    # nova-3 is English-only; for non-English use nova-2 (override via stt.model).
+    lang = (persona.lang or "en").lower()
+    stt_model = persona.stt_model or ("nova-3" if lang.startswith("en") else "nova-2")
     stt = DeepgramSTTService(
         api_key=os.getenv("DEEPGRAM_API_KEY"),
         settings=DeepgramSTTService.Settings(
@@ -147,22 +169,16 @@ async def run_bot(
             profanity_filter=False,
         ),
     )
-    logger.info(f"STT: deepgram model={stt_model} language={lang}")
+    logger.info(f"STT: {persona.stt_provider} model={stt_model} language={lang}")
 
-    # Text-to-Speech service
-    tts = CartesiaTTSService(
-        api_key=os.getenv("CARTESIA_API_KEY"),
-        settings=CartesiaTTSService.Settings(
-            voice=persona["tts_voice_id"],
-            language=lang,
-        ),
-    )
-    logger.info(f"TTS: cartesia voice={persona['tts_voice_id']} language={lang}")
+    # Text-to-Speech service (provider routed from persona.tts_provider)
+    tts = build_tts(persona)
+    logger.info(f"TTS: {persona.tts_provider} voice={persona.voice_id} language={lang}")
 
 
-    # LLM service (provider routed from persona["llm_model"])
+    # LLM service (provider routed from persona.llm_provider)
     llm = build_llm(persona)
-    logger.info(f"LLM: {persona['llm_model']}")
+    logger.info(f"LLM: {persona.llm_provider}:{persona.llm_model}")
 
 
 
@@ -213,7 +229,7 @@ async def run_bot(
         logger.info(f"Kicking off conversation via {source}")
         if memory_brief:
             context.add_message({"role": "user", "content": memory_brief})
-        for msg in persona.get("opening_messages", []):
+        for msg in persona.opening_messages:
             context.add_message(msg)
             recorder.record_message(role=msg.get("role", "system"), text=msg.get("content", ""))
         await task.queue_frames([LLMRunFrame()])

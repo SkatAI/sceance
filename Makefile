@@ -8,7 +8,7 @@ ENV_FILE    ?= server/.env
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build run sh logs stop rm restart push test-health clean
+.PHONY: help build run sh logs stop rm restart push test-health clean prune
 
 help: ## Show available make targets.
 	@echo "Available make targets:"
@@ -52,6 +52,12 @@ test-health: ## Hit /health on the running container; waits up to 30s for startu
 
 clean: ## Remove the locally built image.
 	-docker rmi $(IMAGE):$(TAG)
+
+prune: ## Reclaim disk: drop dangling (<none>) images + build cache. Keeps tagged images, containers, volumes.
+	@echo "Before:"; docker system df
+	docker image prune -f
+	docker builder prune -f
+	@echo "After:"; docker system df
 
 # ---- Push to GitHub (triggers App Platform deploy) -----------------
 

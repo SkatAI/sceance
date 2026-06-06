@@ -21,12 +21,14 @@ sceance/
 │   └── marie_egg.json
 └── server/            ← Pipecat backend, uv-managed
     ├── bot.py
-    ├── db.py          ← SQLite session storage
+    ├── personas.py    ← typed persona loader (nested schema)
+    ├── storage.py     ← Supabase (asyncpg) pool + batched writes
+    ├── recorder.py    ← session row + background drain to Supabase
     ├── observer.py    ← TranscriptObserver, persists transcripts + timing
     ├── pyproject.toml
     ├── Dockerfile
     ├── pcc-deploy.toml
-    └── .env           ← gitignored; holds API keys + AGENT_NAME
+    └── .env           ← gitignored; holds API keys
 ```
 
 ## Run
@@ -41,39 +43,38 @@ uv run bot.py
 listens on a SmallWebRTC transport by default; open the URL it logs to
 talk to it.
 
-## Picking a persona
+## Personas
 
-`server/.env` selects which persona is loaded:
+Each persona is one JSON file under `personas/`, picked by `id` (the filename
+stem) when a session starts. `server/personas.py` parses it into a typed
+`Persona`. The schema is **nested by concern** (`schema_version` 2):
 
-```
-AGENT_NAME=inigo2
-```
+- `agent` — `active` (listed on the landing page), `lang` (steers STT/TTS and
+  the LLM language directive).
+- `persona` — `name`, `description`, `system_prompt`, `opening_messages`
+  (user-role messages that prime the first turn), optional `page_intro` / `cta`.
+- `llm` — `provider` (`openai` / `anthropic`), `model`, `description` (friendly
+  label shown in the UI), optional `temperature`.
+- `tts` — `provider` (`cartesia`), optional `model`, `voice_id`, plus
+  `voice_name` / `voice_description` for display.
+- `stt` — `provider` (`deepgram`), optional `model` (defaults: `nova-3` for
+  English, `nova-2` otherwise).
 
-`bot.py` loads `../personas/<AGENT_NAME>.json`. Edit the env line and
-restart the bot to swap personas. The persona file owns:
-
-- `llm_model` — namespaced `<provider>:<model>` (e.g. `openai:gpt-4.1`,
-  `anthropic:claude-sonnet-4-5`). The bot routes to the right pipecat
-  service from the prefix.
-- `tts_voice_id` — Cartesia voice ID.
-- `temperature` — optional; omit for provider default.
-- `system_instruction` — the persona's character prompt.
-- `opening_messages` — user-role messages that prime the first turn.
+`build_llm` / `build_tts` in `bot.py` route on the provider fields, so swapping
+a model, voice, or provider is a JSON edit.
 
 ## What gets recorded
 
-Every session writes to `server/sceance.db` (SQLite). Three tables:
+Every session is written to **Supabase Postgres** (asyncpg pool in
+`storage.py`; non-blocking drain in `recorder.py`):
 
-- `sessions` — one row per pipeline run, with a full persona snapshot.
+- `sessions` — one row per pipeline run, with a full persona snapshot (`persona_json`).
 - `messages` — user/assistant transcript turns.
-- `events` — frame-level timing (`user_started_speaking`, `llm_start`,
-  `tts_start`, etc.) for latency analysis.
+- `metrics` / `events` — per-processor metrics and frame-level timing
+  (`user_stopped_speaking`, `bot_started_speaking`, etc.) for latency analysis.
 
-Inspect with:
-
-```
-sqlite3 server/sceance.db "SELECT role, text FROM messages WHERE session_id = (SELECT MAX(id) FROM sessions);"
-```
+Browse sessions in the operator dashboard (`/dashboard.html`) or via
+`GET /api/sessions/{id}`.
 
 ## Stack (as wired today)
 
@@ -82,7 +83,7 @@ sqlite3 server/sceance.db "SELECT role, text FROM messages WHERE session_id = (S
 - **LLM:** OpenAI Responses API or Anthropic Messages API, picked per persona.
 - **TTS:** Cartesia.
 - **VAD:** Silero.
-- **Tracing:** SQLite via a `BaseObserver` subclass.
+- **Tracing:** Supabase Postgres via a `BaseObserver` subclass.
 
 ## Notes
 

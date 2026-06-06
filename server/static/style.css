@@ -167,6 +167,27 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   line-height: 1.5;
 }
 
+.agent-meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.agent-meta dt {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.7rem;
+  align-self: center;
+}
+
+.agent-meta dd {
+  margin: 0;
+  color: var(--text, inherit);
+}
+
 .status {
   text-align: center;
   font-size: 0.85rem;

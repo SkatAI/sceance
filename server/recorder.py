@@ -20,6 +20,7 @@ import asyncpg
 from loguru import logger
 
 from memory import summarize_and_persist
+from personas import Persona
 from storage import bulk_insert
 
 BATCH_MAX = 50
@@ -34,7 +35,7 @@ def _utcnow() -> datetime:
 class SessionRecorder:
     """Owns a session row and a background drain loop for child rows."""
 
-    def __init__(self, pool: asyncpg.Pool, persona: dict, user_id: str | None = None):
+    def __init__(self, pool: asyncpg.Pool, persona: Persona, user_id: str | None = None):
         self._pool = pool
         self._persona = persona
         self._user_id = uuid.UUID(user_id) if user_id else None
@@ -60,9 +61,9 @@ class SessionRecorder:
                 VALUES ($1, $2, $3::jsonb, $4, $5, $6)
                 """,
                 self.session_id,
-                self._persona.get("name"),
-                json.dumps(self._persona),
-                self._persona.get("lang"),
+                self._persona.name,
+                json.dumps(self._persona.raw),
+                self._persona.lang,
                 _utcnow(),
                 self._user_id,
             )
