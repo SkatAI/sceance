@@ -132,6 +132,65 @@ def test_start_session_rejects_busy_and_missing_daily_key(tmp_path, monkeypatch)
     assert missing_key.value.detail == "daily_api_key_missing"
 
 
+def test_start_session_creates_daily_room_tokens_and_spawns_bot(tmp_path, monkeypatch):
+    (tmp_path / "agent.json").write_text(json.dumps(persona_payload()), encoding="utf-8")
+    monkeypatch.setattr(server, "PERSONAS_DIR", tmp_path)
+    monkeypatch.setattr(server, "DAILY_API_KEY", "daily-key")
+    monkeypatch.setattr(server, "MAX_SESSIONS", 5)
+    monkeypatch.setattr(server.app.state, "db_pool", object(), raising=False)
+    server._active_sessions.clear()
+    spawned = []
+    created_tasks = []
+
+    class AsyncClient:
+        def __init__(self, headers=None, timeout=None):
+            self.client = FakeDailyClient()
+            spawned.append({"headers": headers, "timeout": timeout, "client": self.client})
+
+        async def __aenter__(self):
+            return self.client
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    async def fake_run_daily_bot(room_url, token, agent_name, pool, user_id=None):
+        spawned.append(
+            {
+                "room_url": room_url,
+                "token": token,
+                "agent_name": agent_name,
+                "pool": pool,
+                "user_id": user_id,
+            }
+        )
+
+    class FakeTask:
+        def add_done_callback(self, callback):
+            self.callback = callback
+
+    def fake_create_task(coro):
+        created_tasks.append(coro.cr_frame.f_locals.copy())
+        coro.close()
+        return FakeTask()
+
+    monkeypatch.setattr(server.httpx, "AsyncClient", AsyncClient)
+    monkeypatch.setattr(server, "run_daily_bot", fake_run_daily_bot)
+    monkeypatch.setattr(server.asyncio, "create_task", fake_create_task)
+    user = CurrentUser(id=str(uuid4()), email="a@example.com", username="a", is_admin=False)
+
+    result = asyncio.run(server.start_session(server.StartSessionBody(agent="agent"), user))
+
+    assert result == {"room_url": "https://room.test/a", "token": "user-token"}
+    assert spawned[0]["headers"] == {"Authorization": "Bearer daily-key"}
+    assert created_tasks[0]["room_url"] == "https://room.test/a"
+    assert created_tasks[0]["token"] == "bot-token"
+    assert created_tasks[0]["agent_name"] == "agent"
+    assert created_tasks[0]["user_id"] == user.id
+    assert len(created_tasks) == 1
+    assert len(server._active_sessions) == 1
+    server._active_sessions.clear()
+
+
 def test_api_me_projects_current_user():
     user = CurrentUser(id="u1", email="a@example.com", username="alex", is_admin=True)
 

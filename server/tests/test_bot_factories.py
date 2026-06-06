@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 import bot
@@ -123,3 +125,209 @@ def test_build_tts_rejects_unknown_provider():
 
     with pytest.raises(ValueError, match="Unknown TTS provider"):
         bot.build_tts(persona)
+
+
+def test_run_bot_wires_pipeline_and_kickoff_with_memory(monkeypatch):
+    persona = make_persona()
+    persona.opening_messages = [{"role": "system", "content": "Opening."}]
+    context_messages = []
+    recorded_messages = []
+    handlers = {}
+    queued_frames = []
+    recorder_events = []
+
+    class FakeSTTService:
+        class Settings:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        def __init__(self, api_key, settings):
+            self.api_key = api_key
+            self.settings = settings
+
+    class FakeContext:
+        def add_message(self, message):
+            context_messages.append(message)
+
+    class FakeAggregatorPair:
+        def __init__(self, context, user_params=None):
+            self.user = "user-aggregator"
+            self.assistant = "assistant-aggregator"
+
+        def __iter__(self):
+            return iter((self.user, self.assistant))
+
+    class FakePipeline:
+        def __init__(self, parts):
+            self.parts = parts
+
+    class FakeRtvi:
+        def event_handler(self, name):
+            def decorator(fn):
+                handlers[f"rtvi:{name}"] = fn
+                return fn
+
+            return decorator
+
+    class FakeTask:
+        def __init__(self, pipeline, params=None, observers=None):
+            self.pipeline = pipeline
+            self.params = params
+            self.observers = observers
+            self.rtvi = FakeRtvi()
+
+        async def queue_frames(self, frames):
+            queued_frames.extend(frames)
+
+        async def cancel(self):
+            recorder_events.append("cancel")
+
+    class FakeRunner:
+        def __init__(self, handle_sigint):
+            self.handle_sigint = handle_sigint
+
+        async def run(self, task):
+            await handlers["daily:on_first_participant_joined"](transport, {"id": "p1"})
+            await handlers["daily:on_first_participant_joined"](transport, {"id": "p1"})
+            await handlers["daily:on_client_disconnected"](transport, {"id": "p1"})
+
+    class FakeRecorder:
+        def __init__(self, pool, persona, user_id=None):
+            self.session_id = "session-id"
+            self.pool = pool
+            self.persona = persona
+            self.user_id = user_id
+
+        async def start(self):
+            recorder_events.append("start")
+
+        def record_message(self, role, text):
+            recorded_messages.append({"role": role, "text": text})
+
+        async def close(self):
+            recorder_events.append("close")
+
+    class FakeObserver:
+        def __init__(self, recorder):
+            self.recorder = recorder
+
+    class FakeTransport:
+        def input(self):
+            return "transport-input"
+
+        def output(self):
+            return "transport-output"
+
+        def event_handler(self, name):
+            def decorator(fn):
+                handlers[f"daily:{name}"] = fn
+                return fn
+
+            return decorator
+
+    transport = FakeTransport()
+    monkeypatch.setattr(bot, "load_persona", lambda agent_name: persona)
+    monkeypatch.setattr(bot, "DeepgramSTTService", FakeSTTService)
+    monkeypatch.setattr(bot, "build_tts", lambda persona: "tts")
+    monkeypatch.setattr(bot, "build_llm", lambda persona: "llm")
+    monkeypatch.setattr(bot, "LLMContext", FakeContext)
+    monkeypatch.setattr(bot, "LLMContextAggregatorPair", FakeAggregatorPair)
+    monkeypatch.setattr(bot, "LLMUserAggregatorParams", lambda **kwargs: kwargs)
+    monkeypatch.setattr(bot, "SileroVADAnalyzer", lambda: "vad")
+    monkeypatch.setattr(bot, "Pipeline", FakePipeline)
+    monkeypatch.setattr(bot, "PipelineParams", lambda **kwargs: kwargs)
+    monkeypatch.setattr(bot, "PipelineTask", FakeTask)
+    monkeypatch.setattr(bot, "PipelineRunner", FakeRunner)
+    monkeypatch.setattr(bot, "SessionRecorder", FakeRecorder)
+    monkeypatch.setattr(bot, "TranscriptObserver", FakeObserver)
+    async def fake_load_memory_brief(pool, user_id):
+        return "memory brief"
+
+    monkeypatch.setattr(bot, "LLMRunFrame", lambda: "run-frame")
+    monkeypatch.setattr(bot, "load_memory_brief", fake_load_memory_brief)
+
+    asyncio.run(bot.run_bot(transport, "agent", "pool", user_id="user-1"))
+
+    assert recorder_events == ["start", "close", "cancel"]
+    assert context_messages == [
+        {"role": "user", "content": "memory brief"},
+        {"role": "system", "content": "Opening."},
+    ]
+    assert recorded_messages == [{"role": "system", "text": "Opening."}]
+    assert queued_frames == ["run-frame"]
+
+
+def test_run_bot_uses_null_recorder_and_skips_memory_when_persona_memory_off(monkeypatch):
+    persona = make_persona(agent={"memory": False})
+    events = []
+
+    class FakeSTTService:
+        class Settings:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        def __init__(self, api_key, settings):
+            self.settings = settings
+
+    class FakeAggregatorPair:
+        def __init__(self, context, user_params=None):
+            pass
+
+        def __iter__(self):
+            return iter(("user-aggregator", "assistant-aggregator"))
+
+    class FakeRtvi:
+        def event_handler(self, name):
+            return lambda fn: fn
+
+    class FakeTask:
+        def __init__(self, *args, **kwargs):
+            self.rtvi = FakeRtvi()
+
+    class FakeRunner:
+        def __init__(self, handle_sigint):
+            pass
+
+        async def run(self, task):
+            events.append("run")
+
+    class FakeNullRecorder:
+        def __init__(self):
+            events.append("null-recorder")
+
+    class FakeTransport:
+        def input(self):
+            return "in"
+
+        def output(self):
+            return "out"
+
+        def event_handler(self, name):
+            return lambda fn: fn
+
+    def fail_load_memory(pool, user_id):
+        raise AssertionError("memory should not load")
+
+    def fail_session_recorder(*args, **kwargs):
+        raise AssertionError("session recorder should not be created")
+
+    monkeypatch.setattr(bot, "load_persona", lambda agent_name: persona)
+    monkeypatch.setattr(bot, "DeepgramSTTService", FakeSTTService)
+    monkeypatch.setattr(bot, "build_tts", lambda persona: "tts")
+    monkeypatch.setattr(bot, "build_llm", lambda persona: "llm")
+    monkeypatch.setattr(bot, "LLMContext", lambda: object())
+    monkeypatch.setattr(bot, "LLMContextAggregatorPair", FakeAggregatorPair)
+    monkeypatch.setattr(bot, "LLMUserAggregatorParams", lambda **kwargs: kwargs)
+    monkeypatch.setattr(bot, "SileroVADAnalyzer", lambda: "vad")
+    monkeypatch.setattr(bot, "Pipeline", lambda parts: parts)
+    monkeypatch.setattr(bot, "PipelineParams", lambda **kwargs: kwargs)
+    monkeypatch.setattr(bot, "PipelineTask", FakeTask)
+    monkeypatch.setattr(bot, "PipelineRunner", FakeRunner)
+    monkeypatch.setattr(bot, "SessionRecorder", fail_session_recorder)
+    monkeypatch.setattr(bot, "NullSessionRecorder", FakeNullRecorder)
+    monkeypatch.setattr(bot, "TranscriptObserver", lambda recorder: recorder)
+    monkeypatch.setattr(bot, "load_memory_brief", fail_load_memory)
+
+    asyncio.run(bot.run_bot(FakeTransport(), "agent", "pool", user_id="user-1"))
+
+    assert events == ["null-recorder", "run"]
