@@ -8,7 +8,7 @@ ENV_FILE    ?= server/.env
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build run sh logs stop rm restart push test-health clean prune
+.PHONY: help build run sh logs stop rm restart push test test-health clean prune
 
 help: ## Show available make targets.
 	@echo "Available make targets:"
@@ -63,3 +63,6 @@ prune: ## Reclaim disk: drop dangling (<none>) images + build cache. Keeps tagge
 
 push: ## Push current branch to origin (triggers App Platform redeploy on main).
 	git push origin $$(git rev-parse --abbrev-ref HEAD)
+
+test: ## Run Python unit tests.
+	cd server && uv run pytest
