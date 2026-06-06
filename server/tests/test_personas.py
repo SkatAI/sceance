@@ -44,6 +44,7 @@ def test_from_dict_normalizes_provider_names_and_keeps_public_subset():
     assert persona.id == "marie"
     assert persona.active is True
     assert persona.lang == "fr"
+    assert persona.memory is True
     assert persona.llm_provider == "openai"
     assert persona.tts_provider == "cartesia"
     assert persona.stt_provider == "deepgram"
@@ -74,6 +75,7 @@ def test_from_dict_uses_optional_defaults():
     persona = Persona.from_dict(raw, id="defaults")
 
     assert persona.lang == "en"
+    assert persona.memory is True
     assert persona.description == ""
     assert persona.opening_messages == []
     assert persona.llm_description == ""
@@ -82,6 +84,15 @@ def test_from_dict_uses_optional_defaults():
     assert persona.tts_model is None
     assert persona.stt_provider == "deepgram"
     assert persona.stt_model is None
+
+
+def test_from_dict_allows_memory_to_be_disabled():
+    raw = persona_payload()
+    raw["agent"]["memory"] = False
+
+    persona = Persona.from_dict(raw, id="blank")
+
+    assert persona.memory is False
 
 
 def test_from_dict_rejects_missing_required_fields():
