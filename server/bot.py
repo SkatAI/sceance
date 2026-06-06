@@ -25,6 +25,7 @@ from pipecat.transports.daily.transport import DailyTransport, DailyParams
 from pipecat.services.openai.responses.llm import OpenAIResponsesHttpLLMService
 from pipecat.services.anthropic.llm import AnthropicLLMService
 from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.runner.types import DailyRunnerArguments
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from dotenv import load_dotenv
@@ -128,12 +129,14 @@ def build_llm(persona: Persona):
 
 def build_tts(persona: Persona):
     """Build the right pipecat TTS service for a persona, routed on
-    `persona.tts_provider`. Only `cartesia` is wired today; the seam is here
-    so ElevenLabs/Hume can slot in later (see notes.md intended stack)."""
+    `persona.tts_provider` (`cartesia` / `deepgram`). The seam is here so
+    ElevenLabs/Hume can slot in later (see notes.md intended stack)."""
     provider = persona.tts_provider
     lang = (persona.lang or "en").lower()
 
     if provider == "cartesia":
+        if not persona.voice_id:
+            raise ValueError("cartesia TTS requires tts.voice_id")
         cartesia_settings = {
             "voice": persona.voice_id,
             "language": lang,
@@ -143,6 +146,17 @@ def build_tts(persona: Persona):
         return CartesiaTTSService(
             api_key=os.getenv("CARTESIA_API_KEY"),
             settings=CartesiaTTSService.Settings(**cartesia_settings),
+        )
+    if provider == "deepgram":
+        # Deepgram folds voice into the model name (e.g. "aura-2-pandora-en"),
+        # which is English-only — no separate voice_id or language to pass.
+        if not persona.tts_model:
+            raise ValueError(
+                "deepgram TTS requires tts.model (e.g. 'aura-2-pandora-en')"
+            )
+        return DeepgramTTSService(
+            api_key=os.getenv("DEEPGRAM_API_KEY"),
+            settings=DeepgramTTSService.Settings(voice=persona.tts_model),
         )
     raise ValueError(f"Unknown TTS provider in persona: {provider!r}")
 

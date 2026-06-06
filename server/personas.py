@@ -55,7 +55,7 @@ class Persona:
     # tts
     tts_provider: str
     tts_model: str | None
-    voice_id: str
+    voice_id: str | None
     voice_name: str
     voice_description: str
 
@@ -106,7 +106,7 @@ class Persona:
             temperature=llm.get("temperature"),
             tts_provider=str(tts.get("provider") or "cartesia").lower(),
             tts_model=tts.get("model"),
-            voice_id=required(tts, "tts", "voice_id"),
+            voice_id=tts.get("voice_id"),  # Cartesia-specific; per-provider check in build_tts
             voice_name=tts.get("voice_name", ""),
             voice_description=tts.get("voice_description", ""),
             stt_provider=str(stt.get("provider") or "deepgram").lower(),

@@ -26,11 +26,11 @@
     "temperature": null
   },
   "tts": {
-    "provider": "cartesia",
-    "model": null,
-    "voice_id": "ff857c8e-e7f9-4afd-af42-dce9f3c5ab02",
-    "voice_name": "",
-    "voice_description": ""
+    "provider": "deepgram",
+    "model": "aura-2-pandora-en",
+    "voice_id": null,
+    "voice_name": "Pandora",
+    "voice_description": "British English (Aura-2)"
   },
   "stt": {
     "provider": "deepgram",
