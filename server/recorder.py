@@ -248,3 +248,28 @@ class SessionRecorder:
         except Exception as e:
             logger.exception(f"SessionRecorder finalize failed: {e}")
         logger.info(f"SessionRecorder closed for session {self.session_id}")
+
+
+class NullSessionRecorder:
+    """No-op recorder for memory-off (blank-slate) personas: nothing is read from
+    or written to the database — no session row, transcript, metrics/events, or
+    cross-session memory update. Mirrors SessionRecorder's interface so the
+    pipeline, observer, and bot wiring work unchanged."""
+
+    def __init__(self) -> None:
+        self.session_id = uuid.uuid4()  # for logging only; never persisted
+
+    async def start(self) -> None:
+        pass
+
+    def record_message(self, *args, **kwargs) -> None:
+        pass
+
+    def record_event(self, *args, **kwargs) -> None:
+        pass
+
+    def record_metric(self, *args, **kwargs) -> None:
+        pass
+
+    async def close(self) -> None:
+        pass

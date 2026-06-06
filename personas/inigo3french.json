@@ -2,7 +2,8 @@
   "schema_version": 2,
   "agent": {
     "active": true,
-    "lang": "fr"
+    "lang": "fr",
+    "memory": true
   },
   "persona": {
     "name": "Ignace",

@@ -2,7 +2,8 @@
   "schema_version": 2,
   "agent": {
     "active": true,
-    "lang": "en"
+    "lang": "en",
+    "memory": false
   },
   "persona": {
     "name": "Yarden Mini",
@@ -20,10 +21,16 @@
     ]
   },
   "llm": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "description": "Claude Haiku 4.5",
+    "temperature": 1
+  },
+  "llm_backup": {
     "provider": "openai",
     "model": "gpt-4.1-nano",
     "description": "GPT-4.1 nano",
-    "temperature": null
+    "temperature": 1
   },
   "tts": {
     "provider": "deepgram",

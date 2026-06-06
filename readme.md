@@ -50,7 +50,8 @@ stem) when a session starts. `server/personas.py` parses it into a typed
 `Persona`. The schema is **nested by concern** (`schema_version` 2):
 
 - `agent` — `active` (listed on the landing page), `lang` (steers STT/TTS and
-  the LLM language directive).
+  the LLM language directive), `memory` (default `true`; `false` = blank-slate:
+  no past-session retrieval and nothing about the session is stored).
 - `persona` — `name`, `description`, `system_prompt`, `opening_messages`
   (user-role messages that prime the first turn), optional `page_intro` / `cta`.
 - `llm` — `provider` (`openai` / `anthropic`), `model`, `description` (friendly

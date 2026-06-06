@@ -37,6 +37,7 @@ class Persona:
     # agent
     active: bool
     lang: str
+    memory: bool
 
     # persona
     name: str
@@ -94,6 +95,7 @@ class Persona:
             raw=raw,
             active=bool(agent.get("active", False)),
             lang=(agent.get("lang") or "en"),
+            memory=bool(agent.get("memory", True)),  # absent → memory on
             name=required(persona, "persona", "name"),
             description=persona.get("description", ""),
             system_prompt=required(persona, "persona", "system_prompt"),

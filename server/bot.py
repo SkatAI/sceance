@@ -50,7 +50,7 @@ import asyncpg
 from memory import load_memory_brief
 from observer import TranscriptObserver
 from personas import Persona, load_persona
-from recorder import SessionRecorder
+from recorder import NullSessionRecorder, SessionRecorder
 
 load_dotenv(override=True)
 
@@ -216,13 +216,20 @@ async def run_bot(
     ])
 
 
-    recorder = SessionRecorder(pool, persona, user_id=user_id)
-    await recorder.start()
-    logger.info(f"Recording session {recorder.session_id} to Supabase")
-
-    memory_brief = await load_memory_brief(pool, user_id)
-    if memory_brief:
-        logger.info(f"Loaded memory brief ({len(memory_brief)} chars) for user {user_id}")
+    # Memory off (persona.memory == False) → blank slate: don't retrieve past
+    # sessions and don't store anything about this one (a no-op recorder keeps
+    # the pipeline/observer wiring identical).
+    if persona.memory:
+        recorder = SessionRecorder(pool, persona, user_id=user_id)
+        await recorder.start()
+        logger.info(f"Recording session {recorder.session_id} to Supabase")
+        memory_brief = await load_memory_brief(pool, user_id)
+        if memory_brief:
+            logger.info(f"Loaded memory brief ({len(memory_brief)} chars) for user {user_id}")
+    else:
+        recorder = NullSessionRecorder()
+        memory_brief = None
+        logger.info("Memory off for this persona — blank slate, nothing recorded")
 
     task = PipelineTask(
         pipeline,
