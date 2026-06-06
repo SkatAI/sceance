@@ -58,6 +58,7 @@ def test_from_dict_normalizes_provider_names_and_keeps_public_subset():
         "voice_description": "Soft voice",
         "llm": "test model",
         "tts_provider": "cartesia",
+        "memory": True,
     }
 
 
