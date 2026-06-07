@@ -32,6 +32,10 @@
   `claude-sonnet-4-5`.
 
 ### Session tracing
+> Superseded 2026-05-25: SQLite/`server/db.py` was replaced by the Supabase
+> Postgres pipeline (`recorder.py` + `storage.py`); the nested persona schema
+> on 2026-06-06 dropped the last of the SQLite path. See entries below.
+
 - New `server/db.py` with a `SessionDB` class — opens SQLite, creates
   schema if missing, inserts one `sessions` row with a full persona
   snapshot per pipeline run, stamps `ended_at` on close.
@@ -63,12 +67,94 @@
 - `.gitignore` extended to skip `*.db`, `*.db-journal`, and audio dumps.
 - Updated `readme.md` to describe the persona system and tracing layout.
 
+## 2026-05-24 — Web deploy + per-agent picker
+
+- FastAPI server (`server/server.py`) fronting the bot: serves the landing
+  page, the `/agents` list, and `/start-session`. DigitalOcean App Platform
+  deploy via `Dockerfile` + `Makefile` + spec.
+- Landing page that lists active personas and lets the caller pick one.
+- French language wiring (per-persona `lang`) and a persona reorg.
+- Persona v3 of `inigo`.
+
+## 2026-05-25 — Supabase migration: recording, dashboard, auth, memory
+
+### Recording off the audio path → Supabase Postgres
+- Replaced the synchronous SQLite `SessionDB` with `server/recorder.py`: a
+  `SessionRecorder` that enqueues records on an in-memory `asyncio.Queue`
+  (microsecond cost, zero awaits) and a background task batch-drains them to
+  Supabase via `server/storage.py` — keeping the audio pipeline off the
+  network round-trip.
+- Schema lives in `server/migrations/001_init.sql`: `sessions` (with persona
+  snapshot + token/char totals), `messages`, `events`, `metrics`.
+- `observer.py` now records pipecat `MetricsFrame` contents (TTFB, processing
+  time, LLM token usage, TTS char usage) into `metrics`, attributed per
+  service.
+
+### Operator dashboard
+- `server/static/dashboard.html` + `dashboard.js` + `dashboard.css`: recent
+  séances, aggregate KPIs (`/api/aggregate`), and per-session detail
+  (`/api/sessions`, `/api/sessions/{id}`) with a per-turn response-latency
+  chart (user→bot first word) built from `events`.
+
+### Auth
+- Supabase magic-link auth + user accounts; `auth.py` verifies the Supabase
+  JWT (JWKS-first, HS256 fallback). `migrations/002_auth.sql` adds a
+  `profiles` table, signup trigger, and `sessions.user_id`. Landing page gates
+  session creation; `/dashboard` + `/api/*` are admin-only.
+
+### Cross-session memory
+- `server/memory.py`: `load_memory_brief` injects a brief of past sessions at
+  call start; `summarize_and_persist` runs fire-and-forget at hangup to
+  summarize the session into per-user memory (`migrations/003_user_memory.sql`).
+
+## 2026-05-30 — Passwordless email sign-in
+
+- Replaced magic-link emails with email-only, passwordless sign-in to stay
+  under the free Supabase email quota: `POST /api/auth/login` mints a one-time
+  `token_hash` server-side (service-role key) and the browser redeems it with
+  `verifyOtp`. `OPEN_SIGNUP` gates local self-signup vs deployed invite-only.
+  Admin REST helpers in `server/supabase_admin.py`.
+
+## 2026-06-06 — Nested persona schema, Deepgram TTS, blank-slate flag
+
+- Restructured persona JSON into a nested, provider-aware schema
+  (`agent` / `persona` / `llm` / `tts` / `stt`); dropped the last SQLite code.
+  Single parse point in `server/personas.py` → typed `Persona`.
+- Added **Deepgram** as a TTS provider alongside Cartesia; `build_tts` routes
+  on `tts.provider`. Switched `yarden_mini` to `aura-2-pandora-en`.
+- `agent.memory` flag (default true): `false` = blank slate (no past-session
+  retrieval). Shown on the agent card.
+- Comprehensive offline test suite (`server/tests/`).
+
+## 2026-06-07 — Latency work, session detail page, observability fixes
+
+- **Latency analysis** (`docs/latency_analysis.md`): decomposed perceived
+  latency (user→bot first word) — dominated by LLM TTFB; STT/LLM *processing*
+  totals overlap speech/playback and aren't on the critical path.
+- **Per-persona `TextAggregationMode`**: new `pipecat` section in persona JSON
+  (`SENTENCE` default | `TOKEN`), passed through `build_tts` to both TTS
+  services, so a persona can opt into token streaming for lower first-word
+  latency without code changes.
+- **Decoupled recording from memory**: blank-slate personas
+  (`memory: false`) are now still recorded for the dashboard;
+  `SessionRecorder` gained `update_memory` to skip only the cross-session
+  memory write. (Previously they used a no-op recorder and never appeared.)
+- **`tts_chars` fix**: the WebSocket `DeepgramTTSService` never emits TTS usage
+  metrics, so `total_tts_chars` read 0. The observer now estimates it from the
+  assistant transcript length when the provider reports nothing — avoiding
+  double-counting for Cartesia.
+- **`/sessions/{id}` detail page**: clicking a séance opens a standalone page
+  instead of an inline expand; shared formatters/auth extracted into
+  `format.js` / `auth.js`.
+
 ## Next
 
-- Decide whether to wire a second agent (séance medium + spirit) — design
-  pattern outlined in chat: Director + per-turn settings swap with a
-  single shared `LLMContext`.
-- Stand up the React + Vite frontend with `@pipecat-ai/client-react`
-  (séance surface + dashboard surface).
-- Build a tiny query layer on top of the SQLite tracing to surface
-  per-turn STT/LLM/TTS latency.
+- Decide whether to wire a second agent (medium + spirit / multi-persona) —
+  Director + per-turn settings swap over a single shared `LLMContext`.
+- Migrate the operator surfaces from the static `server/static/*` pages to the
+  planned React + Vite frontend (séance + dashboard surfaces).
+- Swappable fast LLM (Groq-Llama / Gemini Flash) to cut the dominant LLM-TTFB
+  latency term; measure TTFB against Haiku per persona.
+- A/B `TextAggregationMode` TOKEN vs SENTENCE on a live persona to quantify the
+  first-word latency win vs number/abbreviation normalization cost.
+- ElevenLabs TTS (shared voice library as the casting pool) per `notes.md`.
