@@ -23,7 +23,7 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -184,6 +184,14 @@ async def health():
 @app.get("/dashboard")
 async def dashboard():
     return RedirectResponse(url="/dashboard.html")
+
+
+@app.get("/sessions/{session_id}")
+async def session_page(session_id: str):
+    # Operator detail view for a single séance. The page itself is admin-gated
+    # client-side (same as the dashboard); the JWT-protected data is fetched
+    # from /api/sessions/{id}.
+    return FileResponse(STATIC_DIR / "session.html")
 
 
 @app.get("/agents")

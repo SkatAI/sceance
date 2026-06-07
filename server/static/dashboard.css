@@ -111,6 +111,22 @@ a:hover { text-decoration: underline; }
   color: var(--bg);
   background: var(--accent);
 }
+.period .back-link {
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.85rem;
+  border-radius: 2px;
+  text-decoration: none;
+  transition: color 120ms, background 120ms;
+}
+.period .back-link:hover { color: var(--text); }
+
+/* On the single-séance page the detail grid stands alone — give it air. */
+.sessions .detail { border-top: 0; }
 
 /* ─── Aggregate KPIs ───────────────────────────────────────────────── */
 .aggregate {
@@ -247,6 +263,8 @@ a:hover { text-decoration: underline; }
   align-items: baseline;
   gap: 1rem;
   padding: 0 0.75rem;
+  color: inherit;
+  text-decoration: none;
 }
 .s-persona {
   font-family: var(--sans);
