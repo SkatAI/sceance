@@ -231,13 +231,14 @@ async def run_bot(
         memory_brief = None
         logger.info("Memory off for this persona — blank slate, nothing recorded")
 
+    transcript_observer = TranscriptObserver(recorder)
     task = PipelineTask(
         pipeline,
         params=PipelineParams(
             enable_metrics=True,
             enable_usage_metrics=True,
         ),
-        observers=[TranscriptObserver(recorder)],
+        observers=[transcript_observer],
     )
 
     kicked_off = False
@@ -274,6 +275,9 @@ async def run_bot(
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
         logger.info("Client disconnected")
+        # Synthesize a TTS char estimate if the provider never reported one
+        # (e.g. Deepgram WS). Must run before close() reads the totals.
+        transcript_observer.finalize_tts_chars()
         await recorder.close()
         await task.cancel()
 

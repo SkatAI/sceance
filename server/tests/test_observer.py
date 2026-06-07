@@ -146,6 +146,83 @@ def test_lifecycle_frames_record_configured_events(monkeypatch):
     assert rec.events == [("user_started_speaking", 999)]
 
 
+def _bind_assistant_frames(monkeypatch):
+    monkeypatch.setattr(observer, "LLMFullResponseStartFrame", ResponseStart)
+    monkeypatch.setattr(observer, "LLMTextFrame", Text)
+    monkeypatch.setattr(observer, "LLMFullResponseEndFrame", ResponseEnd)
+
+
+def test_finalize_emits_estimated_tts_chars_when_provider_silent(monkeypatch):
+    # Deepgram WS never emits TTSUsageMetricsData, so finalize should fall back
+    # to the assistant transcript length.
+    _bind_assistant_frames(monkeypatch)
+    rec = Recorder()
+    obs = TranscriptObserver(rec)
+
+    push(obs, ResponseStart(frame_id=10))
+    push(obs, Text("Hello", 11))
+    push(obs, ResponseEnd(frame_id=12))
+    push(obs, ResponseStart(frame_id=13))
+    push(obs, Text("world!", 14))
+    push(obs, ResponseEnd(frame_id=15))
+
+    obs.finalize_tts_chars()
+
+    tts = [m for m in rec.metrics if m[0][2] == "tts_usage"]
+    assert len(tts) == 1
+    args, kwargs = tts[0]
+    assert kwargs["value_num"] == float(len("Hello") + len("world!"))
+
+
+def test_finalize_skips_estimate_when_provider_reported(monkeypatch):
+    # Cartesia self-reports TTS usage; finalize must not double-count.
+    _bind_assistant_frames(monkeypatch)
+    monkeypatch.setattr(observer, "MetricsFrame", Metrics)
+    monkeypatch.setattr(observer, "TTFBMetricsData", TTFB)
+    monkeypatch.setattr(observer, "ProcessingMetricsData", Processing)
+    monkeypatch.setattr(observer, "LLMUsageMetricsData", LLMUsage)
+    monkeypatch.setattr(observer, "TTSUsageMetricsData", TTSUsage)
+    rec = Recorder()
+    obs = TranscriptObserver(rec)
+
+    push(obs, ResponseStart(frame_id=10))
+    push(obs, Text("Hello", 11))
+    push(obs, ResponseEnd(frame_id=12))
+    push(obs, Metrics([TTSUsage()], frame_id=16))
+
+    obs.finalize_tts_chars()
+
+    tts = [m for m in rec.metrics if m[0][2] == "tts_usage"]
+    # Only the provider-reported usage; no synthesized estimate.
+    assert tts == [(("TTS#0", "v", "tts_usage"), {"value_num": 42.0})]
+
+
+def test_finalize_is_idempotent(monkeypatch):
+    _bind_assistant_frames(monkeypatch)
+    rec = Recorder()
+    obs = TranscriptObserver(rec)
+
+    push(obs, ResponseStart(frame_id=10))
+    push(obs, Text("Hello", 11))
+    push(obs, ResponseEnd(frame_id=12))
+
+    obs.finalize_tts_chars()
+    obs.finalize_tts_chars()
+
+    tts = [m for m in rec.metrics if m[0][2] == "tts_usage"]
+    assert len(tts) == 1
+
+
+def test_finalize_no_op_when_no_assistant_text(monkeypatch):
+    _bind_assistant_frames(monkeypatch)
+    rec = Recorder()
+    obs = TranscriptObserver(rec)
+
+    obs.finalize_tts_chars()
+
+    assert [m for m in rec.metrics if m[0][2] == "tts_usage"] == []
+
+
 def test_metrics_frame_records_supported_metric_types(monkeypatch):
     monkeypatch.setattr(observer, "MetricsFrame", Metrics)
     monkeypatch.setattr(observer, "TTFBMetricsData", TTFB)

@@ -210,6 +210,10 @@ def test_run_bot_wires_pipeline_and_kickoff_with_memory(monkeypatch):
     class FakeObserver:
         def __init__(self, recorder):
             self.recorder = recorder
+            self.finalized = False
+
+        def finalize_tts_chars(self):
+            self.finalized = True
 
     class FakeTransport:
         def input(self):

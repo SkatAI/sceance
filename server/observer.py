@@ -54,6 +54,15 @@ class TranscriptObserver(BaseObserver):
         self._rec = recorder
         self._assistant_buf: list[str] = []
         self._seen_frame_ids: set[int] = set()
+        # Fallback TTS char accounting. Some TTS services (e.g. Pipecat's
+        # WebSocket DeepgramTTSService) never emit TTSUsageMetricsData, so
+        # tts_chars would stay 0. We tally the assistant transcript length and,
+        # at finalize, synthesize a tts_usage metric *only if* the provider
+        # never reported its own usage — avoiding double-counting for services
+        # that do (Cartesia). See finalize_tts_chars().
+        self._assistant_chars = 0
+        self._provider_tts_usage_seen = False
+        self._tts_chars_finalized = False
 
     async def on_push_frame(self, data: FramePushed):
         frame = data.frame
@@ -99,6 +108,7 @@ class TranscriptObserver(BaseObserver):
             self._assistant_buf = []
             if text:
                 self._rec.record_message(role="assistant", text=text)
+                self._assistant_chars += len(text)
 
         # Per-service metrics: TTFB, processing time, token / char usage.
         if isinstance(frame, MetricsFrame):
@@ -131,5 +141,26 @@ class TranscriptObserver(BaseObserver):
                 reasoning_tokens=getattr(v, "reasoning_tokens", None),
             )
         elif isinstance(m, TTSUsageMetricsData):
+            self._provider_tts_usage_seen = True
             self._rec.record_metric(processor, model, "tts_usage", value_num=float(m.value))
         # Other MetricsData subclasses (text aggregation, turn) are ignored for now.
+
+    def finalize_tts_chars(self) -> None:
+        """Emit an estimated tts_usage metric from the assistant transcript
+        length when the TTS provider never reported its own usage.
+
+        Idempotent and a no-op when the provider self-reported (Cartesia) or no
+        assistant text was spoken. Call once at session end, before closing the
+        recorder, so the synthesized count lands in the session totals.
+        """
+        if self._tts_chars_finalized:
+            return
+        self._tts_chars_finalized = True
+        if self._provider_tts_usage_seen or self._assistant_chars <= 0:
+            return
+        self._rec.record_metric(
+            "TranscriptObserver (estimated)",
+            None,
+            "tts_usage",
+            value_num=float(self._assistant_chars),
+        )
