@@ -8,7 +8,8 @@ Persona JSON is nested by concern (schema_version 2):
                    "page_intro"?, "cta"? },
       "llm":     { "provider", "model", "description", "temperature"? },
       "tts":     { "provider", "model"?, "voice_id", "voice_name", "voice_description" },
-      "stt":     { "provider", "model"? }
+      "stt":     { "provider", "model"? },
+      "pipecat": { "TextAggregationMode"? }   # "SENTENCE" (default) | "TOKEN"
     }
 
 This module is the single parse point: `load_persona` reads a file and returns a
@@ -64,6 +65,9 @@ class Persona:
     stt_provider: str
     stt_model: str | None
 
+    # pipecat
+    text_aggregation_mode: str  # "SENTENCE" | "TOKEN"
+
     @classmethod
     def from_dict(cls, raw: dict, id: str = "") -> "Persona":
         """Parse the nested schema. Raises PersonaError on a missing section or
@@ -89,6 +93,16 @@ class Persona:
         llm = section("llm")
         tts = section("tts")
         stt = raw.get("stt") if isinstance(raw.get("stt"), dict) else {}
+        pipecat = raw.get("pipecat") if isinstance(raw.get("pipecat"), dict) else {}
+
+        # Text aggregation mode for the TTS step: SENTENCE (default, buffers to
+        # sentence boundaries) or TOKEN (streams tokens for lower latency).
+        agg_mode = str(pipecat.get("TextAggregationMode") or "SENTENCE").upper()
+        if agg_mode not in ("SENTENCE", "TOKEN"):
+            raise PersonaError(
+                f"persona {id!r}: 'pipecat.TextAggregationMode' must be "
+                f"'SENTENCE' or 'TOKEN', got {agg_mode!r}"
+            )
 
         return cls(
             id=id,
@@ -113,6 +127,7 @@ class Persona:
             voice_description=tts.get("voice_description", ""),
             stt_provider=str(stt.get("provider") or "deepgram").lower(),
             stt_model=stt.get("model"),
+            text_aggregation_mode=agg_mode,
         )
 
     def public(self) -> dict:

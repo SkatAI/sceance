@@ -35,10 +35,19 @@ def _utcnow() -> datetime:
 class SessionRecorder:
     """Owns a session row and a background drain loop for child rows."""
 
-    def __init__(self, pool: asyncpg.Pool, persona: Persona, user_id: str | None = None):
+    def __init__(
+        self,
+        pool: asyncpg.Pool,
+        persona: Persona,
+        user_id: str | None = None,
+        update_memory: bool = True,
+    ):
         self._pool = pool
         self._persona = persona
         self._user_id = uuid.UUID(user_id) if user_id else None
+        # When False (blank-slate personas), the session is still recorded for
+        # observability but no cross-session user memory is written at close.
+        self._update_memory = update_memory
         self.session_id: uuid.UUID = uuid.uuid4()
         self._queue: asyncio.Queue[tuple[str, dict] | None] = asyncio.Queue(maxsize=QUEUE_MAX)
         self._drain_task: asyncio.Task | None = None
@@ -218,7 +227,7 @@ class SessionRecorder:
 
         # Kick off summarization in the background. Fire-and-forget: we do not
         # await this — `close()` should return promptly so the bot task can exit.
-        if self._user_id is not None:
+        if self._update_memory and self._user_id is not None:
             asyncio.create_task(
                 summarize_and_persist(self._pool, self.session_id, str(self._user_id))
             )

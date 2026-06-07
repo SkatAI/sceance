@@ -32,5 +32,8 @@
   "stt": {
     "provider": "deepgram",
     "model": null
+  },
+  "pipecat": {
+    "TextAggregationMode": "SENTENCE"
   }
 }

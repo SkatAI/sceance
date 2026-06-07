@@ -96,6 +96,38 @@ def test_from_dict_allows_memory_to_be_disabled():
     assert persona.memory is False
 
 
+def test_text_aggregation_mode_defaults_to_sentence_when_section_absent():
+    raw = persona_payload()
+    raw.pop("pipecat", None)
+
+    persona = Persona.from_dict(raw, id="default-agg")
+
+    assert persona.text_aggregation_mode == "SENTENCE"
+
+
+def test_text_aggregation_mode_read_and_normalized_from_pipecat_section():
+    raw = persona_payload(pipecat={"TextAggregationMode": "token"})
+
+    persona = Persona.from_dict(raw, id="token-agg")
+
+    assert persona.text_aggregation_mode == "TOKEN"
+
+
+def test_text_aggregation_mode_defaults_when_key_missing_in_section():
+    raw = persona_payload(pipecat={})
+
+    persona = Persona.from_dict(raw, id="empty-pipecat")
+
+    assert persona.text_aggregation_mode == "SENTENCE"
+
+
+def test_from_dict_rejects_invalid_text_aggregation_mode():
+    raw = persona_payload(pipecat={"TextAggregationMode": "paragraph"})
+
+    with pytest.raises(PersonaError, match="TextAggregationMode"):
+        Persona.from_dict(raw, id="bad-agg")
+
+
 def test_from_dict_rejects_missing_required_fields():
     raw = persona_payload()
     raw["persona"]["system_prompt"] = ""

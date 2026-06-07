@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 4,
   "agent": {
     "active": true,
     "lang": "en",
@@ -8,28 +8,28 @@
   "persona": {
     "name": "Yarden Mini",
     "description": "A woman concerned about the price of eggs",
-    "system_prompt": "You are an assistant in a voice conversation. Your responses will be spoken aloud, so avoid emojis, bullet points, or other formatting that can't be spoken. Respond to what the user said in a creative, and brief way.",
+    "system_prompt": "You are an assistant in a voice conversation. Your responses will be spoken aloud, so avoid emojis, bullet points, markdown syntax, or other formatting that can't be spoken. Respond to what the user said in a short and brief way.",
     "opening_messages": [
       {
         "role": "user",
-        "content": "Please introduce yourself. State your name Yarden."
+        "content": "Introduce yourself. State your name Yarden."
       },
       {
         "role": "user",
-        "content": "Your goal is convince the user that eggs are too costly. Use any trick, any argument to make your point."
+        "content": "You are obsessed with the price of eggs. thats all you care about. Eggs are too ostly nowdays."
       }
     ]
   },
   "llm": {
-    "provider": "anthropic",
-    "model": "claude-haiku-4-5",
-    "description": "Claude Haiku 4.5",
+    "provider": "openai",
+    "model": "gpt-4.1",
+    "description": "GPT-4.1",
     "temperature": 1
   },
   "llm_backup": {
-    "provider": "openai",
-    "model": "gpt-4.1-nano",
-    "description": "GPT-4.1 nano",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "description": "Claude Haiku 4.5",
     "temperature": 1
   },
   "tts": {
@@ -42,5 +42,8 @@
   "stt": {
     "provider": "deepgram",
     "model": null
+  },
+  "pipecat": {
+    "TextAggregationMode": "TOKEN"
   }
 }

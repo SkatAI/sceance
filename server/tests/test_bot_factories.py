@@ -14,9 +14,10 @@ class FakeOpenAIService:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
 
-    def __init__(self, api_key, settings):
+    def __init__(self, api_key, settings, **extra):
         self.api_key = api_key
         self.settings = settings
+        self.extra = extra
 
 
 class FakeAnthropicService(FakeOpenAIService):
@@ -92,6 +93,7 @@ def test_build_tts_creates_cartesia_service(monkeypatch):
         "language": "fr",
         "model": "sonic-test",
     }
+    assert service.extra["text_aggregation_mode"] == bot.TextAggregationMode.SENTENCE
 
 
 def test_build_tts_requires_cartesia_voice_id():
@@ -111,6 +113,18 @@ def test_build_tts_creates_deepgram_service(monkeypatch):
     assert isinstance(service, FakeDeepgramTTSService)
     assert service.api_key == "deepgram-key"
     assert service.settings.kwargs == {"voice": "aura-2"}
+    assert service.extra["text_aggregation_mode"] == bot.TextAggregationMode.SENTENCE
+
+
+def test_build_tts_passes_token_aggregation_mode_from_persona(monkeypatch):
+    monkeypatch.setattr(bot, "CartesiaTTSService", FakeCartesiaService)
+    monkeypatch.setenv("CARTESIA_API_KEY", "cartesia-key")
+    raw = persona_payload(pipecat={"TextAggregationMode": "TOKEN"})
+    persona = Persona.from_dict(raw, id="token-agent")
+
+    service = bot.build_tts(persona)
+
+    assert service.extra["text_aggregation_mode"] == bot.TextAggregationMode.TOKEN
 
 
 def test_build_tts_requires_deepgram_model():
@@ -192,11 +206,12 @@ def test_run_bot_wires_pipeline_and_kickoff_with_memory(monkeypatch):
             await handlers["daily:on_client_disconnected"](transport, {"id": "p1"})
 
     class FakeRecorder:
-        def __init__(self, pool, persona, user_id=None):
+        def __init__(self, pool, persona, user_id=None, update_memory=True):
             self.session_id = "session-id"
             self.pool = pool
             self.persona = persona
             self.user_id = user_id
+            self.update_memory = update_memory
 
         async def start(self):
             recorder_events.append("start")
@@ -261,9 +276,12 @@ def test_run_bot_wires_pipeline_and_kickoff_with_memory(monkeypatch):
     assert queued_frames == ["run-frame"]
 
 
-def test_run_bot_uses_null_recorder_and_skips_memory_when_persona_memory_off(monkeypatch):
+def test_run_bot_records_but_skips_memory_when_persona_memory_off(monkeypatch):
+    # Blank-slate personas (memory off) must still be recorded for the dashboard,
+    # but with cross-session memory decoupled: no brief retrieval, and the
+    # recorder is told not to write user memory (update_memory=False).
     persona = make_persona(agent={"memory": False})
-    events = []
+    captured = {}
 
     class FakeSTTService:
         class Settings:
@@ -293,11 +311,28 @@ def test_run_bot_uses_null_recorder_and_skips_memory_when_persona_memory_off(mon
             pass
 
         async def run(self, task):
-            events.append("run")
+            captured["ran"] = True
 
-    class FakeNullRecorder:
-        def __init__(self):
-            events.append("null-recorder")
+    class FakeRecorder:
+        def __init__(self, pool, persona, user_id=None, update_memory=True):
+            captured["update_memory"] = update_memory
+            self.session_id = "sid"
+
+        async def start(self):
+            captured["started"] = True
+
+        def record_message(self, *args, **kwargs):
+            pass
+
+        async def close(self):
+            pass
+
+    class FakeObserver:
+        def __init__(self, recorder):
+            pass
+
+        def finalize_tts_chars(self):
+            pass
 
     class FakeTransport:
         def input(self):
@@ -310,10 +345,7 @@ def test_run_bot_uses_null_recorder_and_skips_memory_when_persona_memory_off(mon
             return lambda fn: fn
 
     def fail_load_memory(pool, user_id):
-        raise AssertionError("memory should not load")
-
-    def fail_session_recorder(*args, **kwargs):
-        raise AssertionError("session recorder should not be created")
+        raise AssertionError("memory brief must not load when memory is off")
 
     monkeypatch.setattr(bot, "load_persona", lambda agent_name: persona)
     monkeypatch.setattr(bot, "DeepgramSTTService", FakeSTTService)
@@ -327,11 +359,12 @@ def test_run_bot_uses_null_recorder_and_skips_memory_when_persona_memory_off(mon
     monkeypatch.setattr(bot, "PipelineParams", lambda **kwargs: kwargs)
     monkeypatch.setattr(bot, "PipelineTask", FakeTask)
     monkeypatch.setattr(bot, "PipelineRunner", FakeRunner)
-    monkeypatch.setattr(bot, "SessionRecorder", fail_session_recorder)
-    monkeypatch.setattr(bot, "NullSessionRecorder", FakeNullRecorder)
-    monkeypatch.setattr(bot, "TranscriptObserver", lambda recorder: recorder)
+    monkeypatch.setattr(bot, "SessionRecorder", FakeRecorder)
+    monkeypatch.setattr(bot, "TranscriptObserver", FakeObserver)
     monkeypatch.setattr(bot, "load_memory_brief", fail_load_memory)
 
     asyncio.run(bot.run_bot(FakeTransport(), "agent", "pool", user_id="user-1"))
 
-    assert events == ["null-recorder", "run"]
+    assert captured["started"] is True
+    assert captured["update_memory"] is False
+    assert captured.get("ran") is True

@@ -130,6 +130,26 @@ def test_close_starts_summary_task_for_authenticated_user(monkeypatch):
     assert len(created) == 1
 
 
+def test_close_skips_summary_when_update_memory_off(monkeypatch):
+    # Blank-slate personas still record, but must not write cross-session memory.
+    created = []
+
+    def fake_create_task(coro):
+        created.append(coro)
+        coro.close()
+        return object()
+
+    monkeypatch.setattr("recorder.asyncio.create_task", fake_create_task)
+    recorder = SessionRecorder(
+        FakePool(RecorderConnection()), make_persona(),
+        user_id=str(uuid4()), update_memory=False,
+    )
+
+    asyncio.run(recorder.close())
+
+    assert created == []
+
+
 def test_null_session_recorder_is_noop():
     recorder = NullSessionRecorder()
 

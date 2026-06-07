@@ -26,6 +26,7 @@ from pipecat.services.openai.responses.llm import OpenAIResponsesHttpLLMService
 from pipecat.services.anthropic.llm import AnthropicLLMService
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.tts import DeepgramTTSService
+from pipecat.services.tts_service import TextAggregationMode
 from pipecat.runner.types import DailyRunnerArguments
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from dotenv import load_dotenv
@@ -50,7 +51,7 @@ import asyncpg
 from memory import load_memory_brief
 from observer import TranscriptObserver
 from personas import Persona, load_persona
-from recorder import NullSessionRecorder, SessionRecorder
+from recorder import SessionRecorder
 
 load_dotenv(override=True)
 
@@ -133,6 +134,9 @@ def build_tts(persona: Persona):
     ElevenLabs/Hume can slot in later (see notes.md intended stack)."""
     provider = persona.tts_provider
     lang = (persona.lang or "en").lower()
+    # SENTENCE (default) buffers to sentence boundaries; TOKEN streams tokens
+    # for lower first-word latency. persona guarantees one of these two names.
+    agg_mode = TextAggregationMode[persona.text_aggregation_mode]
 
     if provider == "cartesia":
         if not persona.voice_id:
@@ -146,6 +150,7 @@ def build_tts(persona: Persona):
         return CartesiaTTSService(
             api_key=os.getenv("CARTESIA_API_KEY"),
             settings=CartesiaTTSService.Settings(**cartesia_settings),
+            text_aggregation_mode=agg_mode,
         )
     if provider == "deepgram":
         # Deepgram folds voice into the model name (e.g. "aura-2-pandora-en"),
@@ -157,6 +162,7 @@ def build_tts(persona: Persona):
         return DeepgramTTSService(
             api_key=os.getenv("DEEPGRAM_API_KEY"),
             settings=DeepgramTTSService.Settings(voice=persona.tts_model),
+            text_aggregation_mode=agg_mode,
         )
     raise ValueError(f"Unknown TTS provider in persona: {provider!r}")
 
@@ -216,20 +222,20 @@ async def run_bot(
     ])
 
 
-    # Memory off (persona.memory == False) → blank slate: don't retrieve past
-    # sessions and don't store anything about this one (a no-op recorder keeps
-    # the pipeline/observer wiring identical).
+    # Recording (session row, transcript, metrics) is always on for
+    # observability. Cross-session memory is decoupled: persona.memory == False
+    # → blank slate, so we neither retrieve a past-session brief nor write user
+    # memory at close (update_memory=False), but the session is still recorded.
+    recorder = SessionRecorder(pool, persona, user_id=user_id, update_memory=persona.memory)
+    await recorder.start()
+    logger.info(f"Recording session {recorder.session_id} to Supabase")
     if persona.memory:
-        recorder = SessionRecorder(pool, persona, user_id=user_id)
-        await recorder.start()
-        logger.info(f"Recording session {recorder.session_id} to Supabase")
         memory_brief = await load_memory_brief(pool, user_id)
         if memory_brief:
             logger.info(f"Loaded memory brief ({len(memory_brief)} chars) for user {user_id}")
     else:
-        recorder = NullSessionRecorder()
         memory_brief = None
-        logger.info("Memory off for this persona — blank slate, nothing recorded")
+        logger.info("Memory off for this persona — blank slate (recorded, no cross-session memory)")
 
     transcript_observer = TranscriptObserver(recorder)
     task = PipelineTask(
