@@ -1,3 +1,58 @@
+# path forward
+
+## June 13th, 14th
+
+- costs, measure
+- voice
+  - voice quality, test other providers
+- basics
+  - latency, measure, optimize.
+- personality
+  - deepen personality with skills
+  - evaluate personality quality, stay in character
+- extra
+  - sound fillers when connecting. when waiting, background noises.
+  - transcript of the conversation
+  - emotion detection
+- tech
+  - code cleanup
+  - open to public : signup with code
+
+---
+
+I switched to deepgram for tts for costs reason.
+Cartesia voices are better but the cost s high
+Hume or rime are probably hold even higher prices but for a better quality
+
+
+I'm thnking that the wow factor really ahppens when using good quality voices
+with the new setup (Yarden mini) with deepgram STT and TTS and Token inseatd of sentence mode for the TextAggregationMode param, the conversation is more brittle, less pleasant.
+also now I hear markdown formatting (star) being voiced out. not sure if thats a default of haiku or Deepgram TTS. need to check the verbatim
+
+also thinking of adding emotion or event detection (laughter, crying) to inform the agent during the conversation
+
+using haiku on the egg persona, it started voicing the system prompt, and it directly said it refused to trick the user even for a minor subject like that. Did not have that before with gpt-4.1
+
+
+Latency is an issue. sometimes answers are fast. sometimes theres a blank
+
+So I could go multiple ways
+
+- optimzie latency. thats going to come down to lowering quality im afraid
+- work on the system prompt for Inigo. using skills to get to a more complex persona and knowledge.
+- put guardrails in place from the start
+- explore voice quality with hume and rime
+- add emotion detection in the conversation to inform the agent
+
+and on the ccode front, the code is a mess.
+I have a few tests in place and could start refactoring
+and I have a code quality audit from codex.
+
+which way do I go ? whats the quickest way to an MVP?
+
+My hunch is that quality is the moat and the value.
+
+
 # Jun 6 & 7
 
 - ran out of credits on cartesia, need to find other voice provider, or add credits. voice gen is expensive
