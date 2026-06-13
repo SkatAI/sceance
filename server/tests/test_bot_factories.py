@@ -24,6 +24,10 @@ class FakeAnthropicService(FakeOpenAIService):
     pass
 
 
+class FakeGroqService(FakeOpenAIService):
+    pass
+
+
 class FakeCartesiaService(FakeOpenAIService):
     pass
 
@@ -72,6 +76,22 @@ def test_build_llm_creates_anthropic_service_with_prompt_cache(monkeypatch):
     assert service.settings.kwargs["enable_prompt_caching"] is True
 
 
+def test_build_llm_creates_groq_service(monkeypatch):
+    monkeypatch.setattr(bot, "GroqLLMService", FakeGroqService)
+    monkeypatch.setenv("GROQ_API_KEY", "groq-key")
+    persona = make_persona(
+        llm={"provider": "groq", "model": "mistral-saba-24b", "temperature": 0.5}
+    )
+
+    service = bot.build_llm(persona)
+
+    assert isinstance(service, FakeGroqService)
+    assert service.api_key == "groq-key"
+    assert service.settings.kwargs["model"] == "mistral-saba-24b"
+    assert service.settings.kwargs["temperature"] == 0.5
+    assert "Be concise." in service.settings.kwargs["system_instruction"]
+
+
 def test_build_llm_rejects_unknown_provider():
     persona = make_persona(llm={"provider": "other"})
 
@@ -104,6 +124,9 @@ def test_build_tts_requires_cartesia_voice_id():
 
 
 def test_build_tts_creates_deepgram_service(monkeypatch):
+    # build_tts constructs SpeedDeepgramTTSService (the speed-aware subclass) and
+    # reads DeepgramTTSService.Settings; fake both.
+    monkeypatch.setattr(bot, "SpeedDeepgramTTSService", FakeDeepgramTTSService)
     monkeypatch.setattr(bot, "DeepgramTTSService", FakeDeepgramTTSService)
     monkeypatch.setenv("DEEPGRAM_API_KEY", "deepgram-key")
     persona = make_persona(tts={"provider": "deepgram", "model": "aura-2"})
@@ -114,6 +137,19 @@ def test_build_tts_creates_deepgram_service(monkeypatch):
     assert service.api_key == "deepgram-key"
     assert service.settings.kwargs == {"voice": "aura-2"}
     assert service.extra["text_aggregation_mode"] == bot.TextAggregationMode.SENTENCE
+    # speed absent in persona → None forwarded (Deepgram then uses its default)
+    assert service.extra["speed"] is None
+
+
+def test_build_tts_forwards_deepgram_speed(monkeypatch):
+    monkeypatch.setattr(bot, "SpeedDeepgramTTSService", FakeDeepgramTTSService)
+    monkeypatch.setattr(bot, "DeepgramTTSService", FakeDeepgramTTSService)
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "deepgram-key")
+    persona = make_persona(tts={"provider": "deepgram", "model": "aura-2", "speed": 1.3})
+
+    service = bot.build_tts(persona)
+
+    assert service.extra["speed"] == 1.3
 
 
 def test_build_tts_passes_token_aggregation_mode_from_persona(monkeypatch):

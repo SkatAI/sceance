@@ -24,6 +24,7 @@ Run the bot using::
 from pipecat.transports.daily.transport import DailyTransport, DailyParams
 from pipecat.services.openai.responses.llm import OpenAIResponsesHttpLLMService
 from pipecat.services.anthropic.llm import AnthropicLLMService
+from pipecat.services.groq.llm import GroqLLMService
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.tts_service import TextAggregationMode
@@ -48,6 +49,7 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 
 import asyncpg
 
+from deepgram_tts import SpeedDeepgramTTSService
 from memory import load_memory_brief
 from observer import TranscriptObserver
 from personas import Persona, load_persona
@@ -91,7 +93,7 @@ def _language_directive(lang: str) -> str:
 
 def build_llm(persona: Persona):
     """Build the right pipecat LLM service for a persona, routed on
-    `persona.llm_provider` (`openai` / `anthropic`)."""
+    `persona.llm_provider` (`openai` / `anthropic` / `groq`)."""
     provider = persona.llm_provider
     model = persona.llm_model
     lang = (persona.lang or "en").lower()
@@ -124,6 +126,19 @@ def build_llm(persona: Persona):
         return AnthropicLLMService(
             api_key=os.getenv("ANTHROPIC_API_KEY"),
             settings=AnthropicLLMService.Settings(**anthropic_settings),
+        )
+    if provider == "groq":
+        # Groq is an OpenAI-compatible chat-completions endpoint (LPU-hosted, very
+        # low latency). Same Settings shape as OpenAI; hosts e.g. mistral-saba-24b.
+        groq_settings = {
+            "model": model,
+            "system_instruction": system_instruction,
+        }
+        if temperature is not None:
+            groq_settings["temperature"] = temperature
+        return GroqLLMService(
+            api_key=os.getenv("GROQ_API_KEY"),
+            settings=GroqLLMService.Settings(**groq_settings),
         )
     raise ValueError(f"Unknown LLM provider in persona: {provider!r}")
 
@@ -159,10 +174,12 @@ def build_tts(persona: Persona):
             raise ValueError(
                 "deepgram TTS requires tts.model (e.g. 'aura-2-pandora-en')"
             )
-        return DeepgramTTSService(
+        # speed: Deepgram speaking-rate multiplier (0.7–1.5); None → provider default.
+        return SpeedDeepgramTTSService(
             api_key=os.getenv("DEEPGRAM_API_KEY"),
             settings=DeepgramTTSService.Settings(voice=persona.tts_model),
             text_aggregation_mode=agg_mode,
+            speed=persona.tts_speed,
         )
     raise ValueError(f"Unknown TTS provider in persona: {provider!r}")
 

@@ -121,6 +121,37 @@ def test_text_aggregation_mode_defaults_when_key_missing_in_section():
     assert persona.text_aggregation_mode == "SENTENCE"
 
 
+def test_tts_speed_defaults_to_none_when_absent():
+    persona = Persona.from_dict(persona_payload(), id="no-speed")
+
+    assert persona.tts_speed is None
+
+
+def test_tts_speed_is_parsed_as_float():
+    raw = persona_payload()
+    raw["tts"]["speed"] = 1.2
+
+    persona = Persona.from_dict(raw, id="fast")
+
+    assert persona.tts_speed == 1.2
+
+
+def test_tts_speed_rejects_out_of_range():
+    raw = persona_payload()
+    raw["tts"]["speed"] = 2.0
+
+    with pytest.raises(PersonaError, match="tts.speed.*between 0.7 and 1.5"):
+        Persona.from_dict(raw, id="too-fast")
+
+
+def test_tts_speed_rejects_non_numeric():
+    raw = persona_payload()
+    raw["tts"]["speed"] = "fast"
+
+    with pytest.raises(PersonaError, match="tts.speed.*must be a number"):
+        Persona.from_dict(raw, id="bad-speed")
+
+
 def test_from_dict_rejects_invalid_text_aggregation_mode():
     raw = persona_payload(pipecat={"TextAggregationMode": "paragraph"})
 

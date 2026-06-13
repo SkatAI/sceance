@@ -16,24 +16,31 @@
       }
     ]
   },
-  "llm": {
+  "llm_backup": {
     "provider": "openai",
     "model": "gpt-4.1",
     "description": "GPT-4.1",
     "temperature": 1
   },
-  "llm_backup": {
+  "llm_backup_2": {
     "provider": "anthropic",
     "model": "claude-haiku-4-5",
     "description": "Claude Haiku 4.5",
     "temperature": 1
   },
+  "llm": {
+    "provider": "groq",
+    "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "description": "Llama 4 Scout 17B (Groq)",
+    "temperature": 1
+  },
   "tts": {
     "provider": "deepgram",
-    "model": "aura-2-odysseus-en",
+    "model": "aura-2-amalthea-en",
     "voice_id": null,
-    "voice_name": "Odysseus",
-    "voice_description": "American English, masculine, calm, smooth, comfortable, professional"
+    "voice_name": "Amalthea",
+    "voice_description": "American English, philipino accent",
+    "speed": 1.2
   },
   "stt": {
     "provider": "deepgram",

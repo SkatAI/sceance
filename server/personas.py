@@ -8,7 +8,8 @@ Persona JSON is nested by concern (schema_version 2):
                    "system_prompt" | "system_prompt_path",  # inline OR a .md file
                    "opening_messages", "page_intro"?, "cta"? },
       "llm":     { "provider", "model", "description", "temperature"? },
-      "tts":     { "provider", "model"?, "voice_id", "voice_name", "voice_description" },
+      "tts":     { "provider", "model"?, "voice_id", "voice_name", "voice_description",
+                   "speed"? },   # Deepgram speaking-rate multiplier, 0.7–1.5
       "stt":     { "provider", "model"? },
       "pipecat": { "TextAggregationMode"? }   # "SENTENCE" (default) | "TOKEN"
     }
@@ -74,6 +75,7 @@ class Persona:
     voice_id: str | None
     voice_name: str
     voice_description: str
+    tts_speed: float | None  # Deepgram speaking-rate multiplier (0.7–1.5)
 
     # stt
     stt_provider: str
@@ -132,6 +134,23 @@ class Persona:
                 f"'SENTENCE' or 'TOKEN', got {agg_mode!r}"
             )
 
+        # TTS speaking-rate multiplier. Deepgram accepts 0.7–1.5 (default 1.0);
+        # absent → None, meaning "don't send speed, use the provider default".
+        tts_speed = tts.get("speed")
+        if tts_speed is not None:
+            try:
+                tts_speed = float(tts_speed)
+            except (TypeError, ValueError):
+                raise PersonaError(
+                    f"persona {id!r}: 'tts.speed' must be a number, got "
+                    f"{tts_speed!r}"
+                )
+            if not 0.7 <= tts_speed <= 1.5:
+                raise PersonaError(
+                    f"persona {id!r}: 'tts.speed' must be between 0.7 and 1.5, "
+                    f"got {tts_speed}"
+                )
+
         return cls(
             id=id,
             raw=raw,
@@ -153,6 +172,7 @@ class Persona:
             voice_id=tts.get("voice_id"),  # Cartesia-specific; per-provider check in build_tts
             voice_name=tts.get("voice_name", ""),
             voice_description=tts.get("voice_description", ""),
+            tts_speed=tts_speed,
             stt_provider=str(stt.get("provider") or "deepgram").lower(),
             stt_model=stt.get("model"),
             text_aggregation_mode=agg_mode,
