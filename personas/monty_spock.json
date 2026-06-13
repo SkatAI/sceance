@@ -22,7 +22,7 @@
     "description": "GPT-4.1",
     "temperature": 1
   },
-  "llm_backup_2": {
+  "llm_2": {
     "provider": "anthropic",
     "model": "claude-haiku-4-5",
     "description": "Claude Haiku 4.5",
@@ -35,18 +35,17 @@
     "temperature": 1
   },
   "tts": {
-    "provider": "deepgram",
-    "model": "aura-2-amalthea-en",
-    "voice_id": null,
-    "voice_name": "Amalthea",
-    "voice_description": "American English, philipino accent",
-    "speed": 1.2
+    "provider": "gradium",
+    "model": "kyutai/tts-1.6b-en_fr",
+    "voice_id": "CF0NgaMwHMMrHZn0",
+    "voice_name": "Reuben",
+    "voice_description": "A confident, upbeat British English adult voice"
   },
   "stt": {
     "provider": "deepgram",
     "model": null
   },
   "pipecat": {
-    "TextAggregationMode": "TOKEN"
+    "TextAggregationMode": "SENTENCE"
   }
 }

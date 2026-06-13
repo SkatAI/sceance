@@ -36,6 +36,10 @@ class FakeDeepgramTTSService(FakeOpenAIService):
     pass
 
 
+class FakeGradiumTTSService(FakeOpenAIService):
+    pass
+
+
 def make_persona(**changes):
     raw = persona_payload()
     for section, values in changes.items():
@@ -150,6 +154,36 @@ def test_build_tts_forwards_deepgram_speed(monkeypatch):
     service = bot.build_tts(persona)
 
     assert service.extra["speed"] == 1.3
+
+
+def test_build_tts_creates_gradium_service(monkeypatch):
+    monkeypatch.setattr(bot, "GradiumTTSService", FakeGradiumTTSService)
+    monkeypatch.setenv("GRADIUM_API_KEY", "gradium-key")
+    persona = make_persona(
+        tts={
+            "provider": "gradium",
+            "model": "kyutai/tts-1.6b-en_fr",
+            "voice_id": "_6Aslh2DxfmnRLmP",
+        }
+    )
+
+    service = bot.build_tts(persona)
+
+    assert isinstance(service, FakeGradiumTTSService)
+    assert service.api_key == "gradium-key"
+    assert service.settings.kwargs == {
+        "voice": "_6Aslh2DxfmnRLmP",
+        "language": "fr",
+        "model": "kyutai/tts-1.6b-en_fr",
+    }
+    assert service.extra["text_aggregation_mode"] == bot.TextAggregationMode.SENTENCE
+
+
+def test_build_tts_requires_gradium_voice_id():
+    persona = make_persona(tts={"provider": "gradium", "voice_id": ""})
+
+    with pytest.raises(ValueError, match="gradium TTS requires tts.voice_id"):
+        bot.build_tts(persona)
 
 
 def test_build_tts_passes_token_aggregation_mode_from_persona(monkeypatch):

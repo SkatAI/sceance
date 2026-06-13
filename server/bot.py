@@ -27,6 +27,7 @@ from pipecat.services.anthropic.llm import AnthropicLLMService
 from pipecat.services.groq.llm import GroqLLMService
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.tts import DeepgramTTSService
+from pipecat.services.gradium.tts import GradiumTTSService
 from pipecat.services.tts_service import TextAggregationMode
 from pipecat.runner.types import DailyRunnerArguments
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
@@ -145,8 +146,8 @@ def build_llm(persona: Persona):
 
 def build_tts(persona: Persona):
     """Build the right pipecat TTS service for a persona, routed on
-    `persona.tts_provider` (`cartesia` / `deepgram`). The seam is here so
-    ElevenLabs/Hume can slot in later (see notes.md intended stack)."""
+    `persona.tts_provider` (`cartesia` / `deepgram` / `gradium`). The seam is
+    here so ElevenLabs/Hume can slot in later (see notes.md intended stack)."""
     provider = persona.tts_provider
     lang = (persona.lang or "en").lower()
     # SENTENCE (default) buffers to sentence boundaries; TOKEN streams tokens
@@ -180,6 +181,23 @@ def build_tts(persona: Persona):
             settings=DeepgramTTSService.Settings(voice=persona.tts_model),
             text_aggregation_mode=agg_mode,
             speed=persona.tts_speed,
+        )
+    if provider == "gradium":
+        # Gradium hosts Kyutai's streaming TTS (e.g. "kyutai/tts-1.6b-en_fr",
+        # en+fr, 48kHz WebSocket). voice_id + model are taken from the Gradium
+        # dashboard/voice library; tts.model is optional (defaults to Gradium's).
+        if not persona.voice_id:
+            raise ValueError("gradium TTS requires tts.voice_id")
+        gradium_settings = {
+            "voice": persona.voice_id,
+            "language": lang,
+        }
+        if persona.tts_model:
+            gradium_settings["model"] = persona.tts_model
+        return GradiumTTSService(
+            api_key=os.getenv("GRADIUM_API_KEY"),
+            settings=GradiumTTSService.Settings(**gradium_settings),
+            text_aggregation_mode=agg_mode,
         )
     raise ValueError(f"Unknown TTS provider in persona: {provider!r}")
 
