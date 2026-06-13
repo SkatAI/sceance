@@ -136,6 +136,68 @@ def test_from_dict_rejects_missing_required_fields():
         Persona.from_dict(raw, id="broken")
 
 
+def test_system_prompt_path_resolves_and_bakes_into_raw(tmp_path):
+    prompt_file = tmp_path / "spock.md"
+    prompt_file.write_text("Be logical.\n", encoding="utf-8")
+
+    raw = persona_payload()
+    del raw["persona"]["system_prompt"]
+    raw["persona"]["system_prompt_path"] = str(prompt_file)
+
+    persona = Persona.from_dict(raw, id="spock")
+
+    # resolved (and stripped of trailing newline)
+    assert persona.system_prompt == "Be logical."
+    # baked back into raw so the DB snapshot is self-contained
+    assert raw["persona"]["system_prompt"] == "Be logical."
+
+
+def test_system_prompt_path_resolves_relative_to_repo_root(tmp_path, monkeypatch):
+    # PERSONAS_DIR.parent is treated as the repo root for relative paths.
+    monkeypatch.setattr(personas, "PERSONAS_DIR", tmp_path / "personas")
+    prompt_file = tmp_path / "prompts" / "spock.md"
+    prompt_file.parent.mkdir(parents=True)
+    prompt_file.write_text("Be logical.", encoding="utf-8")
+
+    raw = persona_payload()
+    del raw["persona"]["system_prompt"]
+    raw["persona"]["system_prompt_path"] = "prompts/spock.md"
+
+    persona = Persona.from_dict(raw, id="spock")
+
+    assert persona.system_prompt == "Be logical."
+
+
+def test_inline_system_prompt_wins_over_path(tmp_path):
+    prompt_file = tmp_path / "spock.md"
+    prompt_file.write_text("From file.", encoding="utf-8")
+
+    raw = persona_payload()
+    raw["persona"]["system_prompt"] = "Inline."
+    raw["persona"]["system_prompt_path"] = str(prompt_file)
+
+    persona = Persona.from_dict(raw, id="spock")
+
+    assert persona.system_prompt == "Inline."
+
+
+def test_system_prompt_path_missing_file_raises(tmp_path):
+    raw = persona_payload()
+    del raw["persona"]["system_prompt"]
+    raw["persona"]["system_prompt_path"] = str(tmp_path / "does_not_exist.md")
+
+    with pytest.raises(PersonaError, match="system_prompt_path not found"):
+        Persona.from_dict(raw, id="missing")
+
+
+def test_from_dict_rejects_when_neither_prompt_nor_path():
+    raw = persona_payload()
+    del raw["persona"]["system_prompt"]
+
+    with pytest.raises(PersonaError, match="system_prompt"):
+        Persona.from_dict(raw, id="broken")
+
+
 def test_from_dict_rejects_missing_sections():
     raw = persona_payload()
     raw.pop("llm")

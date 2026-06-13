@@ -4,8 +4,9 @@ Persona JSON is nested by concern (schema_version 2):
 
     {
       "agent":   { "active": bool, "lang": "en" },
-      "persona": { "name", "description", "system_prompt", "opening_messages",
-                   "page_intro"?, "cta"? },
+      "persona": { "name", "description",
+                   "system_prompt" | "system_prompt_path",  # inline OR a .md file
+                   "opening_messages", "page_intro"?, "cta"? },
       "llm":     { "provider", "model", "description", "temperature"? },
       "tts":     { "provider", "model"?, "voice_id", "voice_name", "voice_description" },
       "stt":     { "provider", "model"? },
@@ -28,6 +29,19 @@ PERSONAS_DIR = Path(__file__).parent.parent / "personas"
 
 class PersonaError(ValueError):
     """Raised when a persona file is missing required fields or is malformed."""
+
+
+def _read_prompt_file(rel_or_abs: str, persona_id: str) -> str:
+    """Read a system-prompt markdown file. Relative paths resolve from the repo
+    root (PERSONAS_DIR.parent), matching e.g. 'personas/systemprompts/x.md'."""
+    p = Path(rel_or_abs)
+    if not p.is_absolute():
+        p = PERSONAS_DIR.parent / p
+    if not p.exists():
+        raise PersonaError(
+            f"persona {persona_id!r}: system_prompt_path not found: {p}"
+        )
+    return p.read_text().strip()
 
 
 @dataclass
@@ -91,6 +105,20 @@ class Persona:
         agent = section("agent")
         persona = section("persona")
         llm = section("llm")
+
+        # System prompt: inline `system_prompt` wins; otherwise load from the
+        # markdown file named by `system_prompt_path` and bake the resolved text
+        # back into the dict so the DB snapshot (persona.raw) is self-contained.
+        system_prompt = persona.get("system_prompt") or ""
+        if not system_prompt and persona.get("system_prompt_path"):
+            system_prompt = _read_prompt_file(persona["system_prompt_path"], id)
+            persona["system_prompt"] = system_prompt
+        if not system_prompt:
+            raise PersonaError(
+                f"persona {id!r}: one of 'persona.system_prompt' or "
+                f"'persona.system_prompt_path' is required"
+            )
+
         tts = section("tts")
         stt = raw.get("stt") if isinstance(raw.get("stt"), dict) else {}
         pipecat = raw.get("pipecat") if isinstance(raw.get("pipecat"), dict) else {}
@@ -112,7 +140,7 @@ class Persona:
             memory=bool(agent.get("memory", True)),  # absent → memory on
             name=required(persona, "persona", "name"),
             description=persona.get("description", ""),
-            system_prompt=required(persona, "persona", "system_prompt"),
+            system_prompt=system_prompt,
             opening_messages=persona.get("opening_messages", []),
             page_intro=persona.get("page_intro"),
             cta=persona.get("cta"),

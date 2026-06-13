@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "agent": {
+    "active": false,
+    "lang": "fr",
+    "memory": true
+  },
+  "persona": {
+    "name": "Inigo Sonnet",
+    "description": "Inigo V2",
+    "system_prompt_path":"personas/systemprompts/inigo_v2_en.md",
+    "opening_messages": [
+      {
+        "role": "user",
+        "content": "The call has just connected. Greet the caller simply and warmly in one short sentence, then invite them to share what's on their mind. Do not counsel yet — let them describe it fully first."
+      }
+    ]
+  },
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "description": "Claude Sonnet 4.5",
+    "temperature": null
+  },
+  "tts": {
+    "provider": "cartesia",
+    "model": null,
+    "voice_id": "ef191366-f52f-447a-a398-ed8c0f2943a1",
+    "voice_name": "",
+    "voice_description": ""
+  },
+  "stt": {
+    "provider": "deepgram",
+    "model": null
+  },
+  "pipecat": {
+    "TextAggregationMode": "SENTENCE"
+  }
+}

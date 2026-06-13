@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "agent": {
+    "active": true,
+    "lang": "fr",
+    "memory": true
+  },
+  "persona": {
+    "name": "Ignace",
+    "description": "Inigo en français",
+    "system_prompt_path": "personas/systemprompts/inigo_prompt_v4_fr.md",
+    "opening_messages": [
+      {
+        "role": "user",
+        "content": "Accueille-moi chaleureusement en une courte phrase en utilisant l'ouverture de tes instructions, puis invite-moi à partager ce qui me préoccupe. Demande moi mon prénom. Ne conseille pas encore — laisse-moi d'abord décrire pleinement la situation.."
+      }
+    ],
+    "page_intro": "Tu es venu ici sans trop savoir pourquoi.\n\nC'est un bon début.\n\nUne méthode vieille de cinq siècles pour mettre des mots sur ce que tu cherches.\n\nAppelle Ignace, parle-lui.",
+    "cta": "Appelle Ignace, parle-lui."
+  },
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-5",
+    "description": "Claude Sonnet 4.5",
+    "temperature": null
+  },
+  "tts": {
+    "provider": "cartesia",
+    "model": null,
+    "voice_id": "7345dfa5-ee04-44d2-abf4-29262b880ab4",
+    "voice_name": "",
+    "voice_description": ""
+  },
+  "stt": {
+    "provider": "deepgram",
+    "model": null
+  },
+  "pipecat": {
+    "TextAggregationMode": "SENTENCE"
+  }
+}

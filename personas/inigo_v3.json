@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "agent": {
+    "active": true,
+    "lang": "en",
+    "memory": true
+  },
+  "persona": {
+    "name": "Inigo",
+    "description": "An AI guide in the Ignatian tradition. A voice conversation. Bring a question, listen carefully, take your time.",
+    "system_prompt_path": "personas/systemprompts/inigo_prompt_v3.md",
+    "opening_messages": [
+      {
+        "role": "user",
+        "content": "The call has just connected. Say your name. Greet me warmly in one short sentence using the opening from your instructions, then invite me to share what's on my mind. Do not counsel yet — let me describe it fully first. Ask for my name"
+      }
+    ],
+    "page_intro": "You're not sure why you're here. Well, that's a start.\n\nThe Jesuit method for putting words to what you're after.\n\nCall Inigo. Talk to him.",
+    "cta": "Call Inigo. Talk to him."
+  },
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "description": "Claude Haiku 4.5",
+    "temperature": 1
+  },
+  "tts": {
+    "provider": "deepgram",
+    "model": "aura-2-atlas-en",
+    "voice_id": null,
+    "voice_name": "Atlas",
+    "voice_description": "American English (Aura-2)"
+  },
+  "tts_backup": {
+    "provider": "cartesia",
+    "model": null,
+    "voice_id": "02aeee94-c02b-456e-be7a-659672acf82d",
+    "voice_name": "",
+    "voice_description": ""
+  },
+  "stt": {
+    "provider": "deepgram",
+    "model": null
+  },
+  "pipecat": {
+    "TextAggregationMode": "SENTENCE"
+  }
+}

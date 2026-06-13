@@ -8,7 +8,7 @@
   "persona": {
     "name": "Yarden Mini",
     "description": "A woman concerned about the price of eggs",
-    "system_prompt": "You are an assistant in a voice conversation. Your responses will be spoken aloud, so avoid emojis, bullet points, markdown syntax, or other formatting that can't be spoken. Respond to what the user said in a short and brief way.",
+    "system_prompt_path": "personas/systemprompts/yarden_mini.md",
     "opening_messages": [
       {
         "role": "user",
