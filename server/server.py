@@ -31,6 +31,7 @@ from loguru import logger
 
 from auth import CurrentUser, get_current_user, require_admin
 from bot import run_daily_bot
+from latency import _quantile, generate_and_store
 from personas import Persona, PersonaError
 from storage import close_pool, create_pool
 from supabase_admin import (
@@ -259,19 +260,6 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt else None
 
 
-def _quantile(sorted_vals: list[float], q: float) -> float | None:
-    """Linear-interp quantile. q in [0, 1]. Returns None for empty input."""
-    if not sorted_vals:
-        return None
-    if len(sorted_vals) == 1:
-        return sorted_vals[0]
-    pos = q * (len(sorted_vals) - 1)
-    lo = int(pos)
-    hi = min(lo + 1, len(sorted_vals) - 1)
-    frac = pos - lo
-    return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * frac
-
-
 def _pair_response_latencies(events: list[dict]) -> list[float]:
     """Pair each user_stopped_speaking with the next bot_started_speaking.
 
@@ -471,6 +459,24 @@ async def api_session_detail(
             """,
             sid,
         )
+        # Stored latency analysis (if generated before), loaded with the page.
+        la = await conn.fetchrow(
+            """
+            SELECT bundle, report, has_unexplained, model, generated_at
+            FROM session_latency_analysis WHERE session_id = $1
+            """,
+            sid,
+        )
+
+    latency_analysis = None
+    if la is not None:
+        latency_analysis = {
+            "bundle": json.loads(la["bundle"]) if isinstance(la["bundle"], str) else la["bundle"],
+            "report": json.loads(la["report"]) if isinstance(la["report"], str) else la["report"],
+            "has_unexplained": la["has_unexplained"],
+            "model": la["model"],
+            "generated_at": _iso(la["generated_at"]),
+        }
 
     # Per-turn user→bot response latency.
     latencies = _pair_response_latencies([dict(r) for r in turn_events])
@@ -539,7 +545,27 @@ async def api_session_detail(
             for m in metrics
         ],
         "response_latency": response,
+        "latency_analysis": latency_analysis,
     }
+
+
+@app.post("/api/sessions/{session_id}/latency-analysis")
+async def api_session_latency_analysis(
+    session_id: str,
+    _admin: CurrentUser = Depends(require_admin),
+):
+    """Run the deterministic collector + one LLM synthesis call, store, return it.
+
+    Single row per session — regenerating overwrites. Synchronous (one LLM call).
+    """
+    try:
+        sid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="bad_uuid")
+    try:
+        return await generate_and_store(app.state.db_pool, sid)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="session_not_found")
 
 
 # Mount static last so /health and /start-session take precedence.

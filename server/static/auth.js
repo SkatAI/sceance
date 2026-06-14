@@ -68,3 +68,23 @@ export function makeGetJSON(getToken) {
     return r.json();
   };
 }
+
+// Build an authed JSON POST helper bound to a live-token getter.
+export function makePostJSON(getToken) {
+  return async function postJSON(url, body) {
+    const token = getToken();
+    const headers = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const r = await fetch(url, {
+      method: "POST",
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (r.status === 401 || r.status === 403) {
+      window.location.href = "/";
+      throw new Error(`${url} → ${r.status}`);
+    }
+    if (!r.ok) throw new Error(`${url} → ${r.status}`);
+    return r.json();
+  };
+}

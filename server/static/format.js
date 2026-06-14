@@ -233,3 +233,86 @@ function formatMetricValue(kind, v) {
   if (kind === "tts_usage") return fmtInt(Math.round(v));
   return v.toFixed(2);
 }
+
+// ─── Latency analysis (collector bundle + LLM synthesis) ────────────
+
+const CAUSE_LABELS = {
+  intro_cold_start: "intro · cold start",
+  stall_watchdog: "stall watchdog",
+  llm_jitter: "LLM jitter (provider-side)",
+  context_bloat: "context bloat",
+};
+
+function causeLabel(c) {
+  return CAUSE_LABELS[c] || c || "—";
+}
+
+// Render the stored analysis: { bundle, report, has_unexplained, model, generated_at }.
+export function renderLatencyAnalysis(a) {
+  if (!a || !a.report) return "";
+  const r = a.report;
+  const b = a.bundle || {};
+  const ps = b.perceived_stats || {};
+  const stage = b.stage_ttfb || [];
+
+  const unexplained = (r.unexplained && r.unexplained.length)
+    ? `
+      <div class="la-flag">
+        <div class="la-flag-title">⚠ Needs a closer look — outside the known buckets</div>
+        <ul>${r.unexplained.map(u => `<li>${escapeHtml(u)}</li>`).join("")}</ul>
+      </div>`
+    : "";
+
+  const statBlock = ps.count
+    ? `
+      <div class="lat-stats">
+        ${[["turns", ps.count], ["median", fmtMs(ps.median)], ["mean", fmtMs(ps.avg)],
+           ["p90", fmtMs(ps.p90)], ["max", fmtMs(ps.max)]].map(([k, v]) => `
+          <div class="lat-stat">
+            <div class="lat-stat-label">${k}</div>
+            <div class="lat-stat-value">${typeof v === "number" ? v : v}</div>
+          </div>`).join("")}
+      </div>`
+    : `<div class="empty" style="color:var(--text-2)">no real turns to summarize</div>`;
+
+  const stageRows = stage.length
+    ? stage.map(s => `
+        <tr>
+          <td>${shortProcessor(s.processor)}</td>
+          <td class="num">${s.n}</td>
+          <td class="num">${fmtMs(s.min)}</td>
+          <td class="num">${fmtMs(s.avg)}</td>
+          <td class="num">${fmtMs(s.max)}</td>
+        </tr>`).join("")
+    : `<tr><td colspan="5" class="empty">no ttfb metrics</td></tr>`;
+
+  const outliers = (r.outliers && r.outliers.length)
+    ? r.outliers.map(o => `
+        <li>
+          <span class="la-outlier-head">turn ${o.turn} · ${o.perceived_s != null ? fmtMs(o.perceived_s) : "—"}
+            <span class="la-cause la-cause-${o.cause || "none"}">${causeLabel(o.cause)}</span></span>
+          <span class="la-outlier-note">${escapeHtml(o.note || "")}</span>
+        </li>`).join("")
+    : `<li class="empty" style="color:var(--text-2)">no outliers — every turn within range</li>`;
+
+  return `
+    <div class="latency-analysis-panel">
+      <div class="la-head">
+        <h3>Latency analysis</h3>
+        <span class="la-meta">${a.model || ""}${a.generated_at ? ` · ${fmtDate(a.generated_at)}` : ""}</span>
+      </div>
+      ${unexplained}
+      <p class="la-headline">${escapeHtml(r.headline || "")}</p>
+      <p class="la-main-cause">${escapeHtml(r.main_cause || "")}</p>
+      <h4>Perceived latency · real turns (intro &amp; stall excluded)</h4>
+      ${statBlock}
+      <h4>Per-stage TTFB</h4>
+      <table class="metrics-table">
+        <thead><tr><th>Stage</th><th>n</th><th>min</th><th>avg</th><th>max</th></tr></thead>
+        <tbody>${stageRows}</tbody>
+      </table>
+      <h4>Outliers</h4>
+      <ul class="la-outliers">${outliers}</ul>
+    </div>
+  `;
+}

@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-06-14 — Per-session latency analysis (dashboard)
+
+- New one-click **Latency analysis** on the session detail page (button left of
+  "← all séances"). Runs a deterministic SQL collector (per-stage TTFB stats,
+  per-turn perceived latency with intro/stall flags + rule-based cause tags,
+  context-bloat-vs-jitter correlation) then one Claude Sonnet 4.6 synthesis call
+  that writes the report and flags anything outside the known cause buckets.
+- Results stored one-per-session in new `session_latency_analysis` table
+  (migration `005_session_latency.sql`) and reloaded with the page if already
+  generated; regenerating overwrites.
+- New `server/latency.py` (collector + synthesis + upsert);
+  `POST /api/sessions/{id}/latency-analysis`; `GET /api/sessions/{id}` now
+  includes any stored `latency_analysis`.
+- SQL-only for now — log cross-check deferred, so the stall tail is flagged
+  heuristically.
+
 ## 2026-05-23 — Bootstrap + persona system + tracing + multi-provider LLM
 
 ### Bootstrap
