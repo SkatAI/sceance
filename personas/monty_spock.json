@@ -36,8 +36,8 @@
   },
   "tts": {
     "provider": "gradium",
-    "model": "kyutai/tts-1.6b-en_fr",
     "voice_id": "CF0NgaMwHMMrHZn0",
+    "model": "kyutai/tts-1.6b-en_fr",
     "voice_name": "Reuben",
     "voice_description": "A confident, upbeat British English adult voice"
   },
