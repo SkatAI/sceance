@@ -1,14 +1,18 @@
 SHELL := /bin/bash
 
-IMAGE       ?= sceance
-TAG         ?= test
-CONTAINER   ?= sceance-local
-PORT        ?= 8080
-ENV_FILE    ?= server/.env
+IMAGE        ?= sceance
+TAG          ?= test
+CONTAINER    ?= sceance-local
+PORT         ?= 8080
+ENV_FILE     ?= server/.env
+
+# DigitalOcean App Platform (prod). Override on the CLI if these change.
+DO_APP       ?= seal-app
+DO_COMPONENT ?= sceance
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build run sh logs stop rm restart push test test-health clean prune
+.PHONY: help build run sh logs stop rm restart push test test-health clean prune prod-logs
 
 help: ## Show available make targets.
 	@echo "Available make targets:"
@@ -58,6 +62,11 @@ prune: ## Reclaim disk: drop dangling (<none>) images + build cache. Keeps tagge
 	docker image prune -f
 	docker builder prune -f
 	@echo "After:"; docker system df
+
+# ---- DigitalOcean App Platform -------------------------------------
+
+prod-logs: ## Follow live run logs from the prod DO app ($(DO_APP)). Needs doctl auth. Ctrl-C to stop.
+	doctl apps logs $(DO_APP) $(DO_COMPONENT) --type run --follow
 
 # ---- Push to GitHub (triggers App Platform deploy) -----------------
 
