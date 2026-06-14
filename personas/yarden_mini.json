@@ -6,19 +6,14 @@
     "memory": false
   },
   "persona": {
-    "name": "Yarden Mini",
-    "description": "A woman concerned about the price of eggs",
+    "name": "Sophie",
+    "description": "A French woman obsessed about the price of eggs.",
     "system_prompt_path": "personas/systemprompts/yarden_mini.md",
     "opening_messages": [
       {
         "role": "user",
-        "content": "Introduce yourself. State your name Yarden."
-      },
-      {
-        "role": "user",
-        "content": "You are obsessed with the price of eggs. thats all you care about. Eggs are too ostly nowdays."
-      }
-    ]
+        "content": "Greet the user warmly in ONE short sentence. Say only your first name, Sophie, and ask for their name. Reveal nothing else about yourself yet."
+      }    ]
   },
   "llm": {
     "provider": "openai",
@@ -33,6 +28,12 @@
     "temperature": 1
   },
   "tts": {
+    "provider": "gradium",
+    "voice_id": "P4GqVY98hjQSvkiu",
+    "voice_name": "Capucine",
+    "voice_description": "French accent"
+  },
+  "tts_deepgram": {
     "provider": "deepgram",
     "model": "aura-2-pandora-en",
     "voice_id": null,
@@ -44,6 +45,6 @@
     "model": null
   },
   "pipecat": {
-    "TextAggregationMode": "TOKEN"
+    "TextAggregationMode": "SENTENCE"
   }
 }
