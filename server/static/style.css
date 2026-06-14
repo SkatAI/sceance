@@ -141,8 +141,15 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .agents {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 1rem;
+  /* break out of main's narrow column so up to 4 cards fit per row */
+  width: 90vw;
+  max-width: 960px;
+  margin-left: 50%;
+  transform: translateX(-50%);
 }
 
 .agent-card {
@@ -152,19 +159,36 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  /* min basis + container max-width caps the row at four cards */
+  flex: 1 1 200px;
+  max-width: 220px;
+  /* equal-height cards in the row so the talk buttons line up */
+  align-self: stretch;
 }
 
 .agent-name {
   margin: 0;
-  font-size: 1.15rem;
-  font-weight: 500;
+  font-size: 1.4rem;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .agent-desc {
   margin: 0;
-  color: var(--muted);
-  font-size: 0.9rem;
+  color: var(--text, inherit);
+  font-size: 1rem;
   line-height: 1.5;
+  /* grow to fill the card so the button below sits at the same level
+     across cards regardless of description length */
+  flex: 1 1 auto;
+}
+
+.talk-btn {
+  /* smaller than the description; secondary to the name/description */
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  align-self: center;
+  width: auto;
 }
 
 .agent-meta {
@@ -172,7 +196,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 0.2rem 0.6rem;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 
 .agent-meta dt {

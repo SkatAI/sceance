@@ -49,8 +49,8 @@ function showHangup() {
 
 function talkLabel(agent) {
   return agent.lang === "fr"
-    ? `Parlez avec ${agent.name}`
-    : `Talk to ${agent.name}`;
+    ? "Discutons"
+    : "Let's talk";
 }
 
 function setAgentButtonsDisabled(disabled) {
@@ -91,9 +91,13 @@ function renderAgents(agents) {
       card.appendChild(desc);
     }
 
+    const btn = document.createElement("button");
+    btn.className = "primary talk-btn";
+    btn.textContent = talkLabel(agent);
+    btn.addEventListener("click", () => startSession(agent.id));
+    card.appendChild(btn);
+
     const rows = [];
-    const voice = [agent.voice_name, agent.voice_description].filter(Boolean).join(" — ");
-    if (voice) rows.push(["Voice", voice]);
     if (agent.llm) rows.push(["Model", agent.llm]);
     if (agent.tts_provider) rows.push(["TTS", agent.tts_provider]);
     if (agent.lang) rows.push(["Lang", String(agent.lang).toUpperCase()]);
@@ -111,12 +115,6 @@ function renderAgents(agents) {
       }
       card.appendChild(meta);
     }
-
-    const btn = document.createElement("button");
-    btn.className = "primary";
-    btn.textContent = talkLabel(agent);
-    btn.addEventListener("click", () => startSession(agent.id));
-    card.appendChild(btn);
 
     agentsEl.appendChild(card);
   }
