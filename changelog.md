@@ -175,6 +175,14 @@
   a reconnect via the base `_request_reconnect` so the next turn lands on a
   healthy socket, and speaks a `recovery_message` so the dead air is audible.
 - Wired into `bot.py` in place of the bare `DeepgramSTTService`.
+- **Fail-fast on bad Deepgram credentials**: `StallGuardedDeepgramSTTService`
+  overrides `_connection_handler` so a 401/403 (invalid `DEEPGRAM_API_KEY`)
+  stops reconnecting instead of retrying ~1.5×/s forever; transient errors still
+  retry, now with a 1s backoff.
+- **No API key in logs**: the Deepgram handshake exception embeds
+  `Authorization: Token <key>`, which pipecat logged verbatim; reconnect logging
+  now scrubs `Token <secret>` via `_redact_secrets` so the key never reaches the
+  DigitalOcean log store.
 
 ## 2026-06-14 — Dashboard agent filter, per-session environment tag
 

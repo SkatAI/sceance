@@ -27,9 +27,11 @@ and the caller knows to repeat themselves.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from deepgram.core.events import EventType
 from loguru import logger
 from pipecat.frames.frames import (
     Frame,
@@ -44,6 +46,43 @@ from pipecat.services.deepgram.stt import DeepgramSTTService
 # land in well under 2s once Finalize is sent), so the watchdog only trips on a
 # genuine stall, not on a slow-but-working response.
 DEFAULT_STALL_TIMEOUT_S = 6.0
+
+# Pause between transient reconnect attempts, so a flapping connection doesn't
+# hammer Deepgram (and flood the logs) several times a second.
+RECONNECT_BACKOFF_S = 1.0
+
+# Deepgram dumps the request headers — including `Authorization: Token <key>` —
+# into the exception it raises on a failed WebSocket handshake, and pipecat logs
+# that exception verbatim. Strip any `Token <secret>` before logging so the API
+# key never lands in DigitalOcean's log store.
+_TOKEN_RE = re.compile(r"(?i)(token\s+)([A-Za-z0-9._-]{12,})")
+
+
+def _redact_secrets(text: str) -> str:
+    """Replace `Token <secret>` occurrences with a redaction marker."""
+    return _TOKEN_RE.sub(r"\1«redacted»", text)
+
+
+def _is_auth_error(exc: Exception) -> bool:
+    """True if `exc` is a non-retryable Deepgram auth failure (401/403).
+
+    Checks structured status-code attributes first, then falls back to the
+    error text, since the exact exception type varies across the deepgram-sdk /
+    websockets stack.
+    """
+    for path in (("status_code",), ("response", "status_code"), ("code",)):
+        obj: Any = exc
+        for attr in path:
+            obj = getattr(obj, attr, None)
+        if obj in (401, 403):
+            return True
+    text = str(exc).lower()
+    if re.search(r"status_code:\s*40[13]\b", text):
+        return True
+    return any(
+        marker in text
+        for marker in ("http 401", "http 403", "invalid credentials", "unauthorized")
+    )
 
 
 class _StallWatchdog:
@@ -116,6 +155,55 @@ class StallGuardedDeepgramSTTService(DeepgramSTTService):
         # type, not a subclass), so the socket is alive — stand down.
         if isinstance(frame, TranscriptionFrame):
             self._watchdog.disarm()
+
+    # ---- Connection loop ------------------------------------------------
+
+    async def _connection_handler(self) -> None:
+        """Manage the WebSocket lifecycle, failing fast on auth errors.
+
+        Mirrors pipecat 1.2.x ``DeepgramSTTService._connection_handler`` (the
+        connect → listen → cleanup loop) with two changes, both addressing
+        prod incidents:
+
+        - **Redacted logging**: the Deepgram handshake exception embeds the API
+          key (``Authorization: Token <key>``); we scrub it before logging.
+        - **Fail-fast on 401/403**: an invalid credential never recovers, so we
+          stop instead of reconnecting ~1.5×/s forever (log flood + wasted CPU).
+          Transient errors still retry, now with a short backoff.
+
+        Revisit if the pinned pipecat version changes this method.
+        """
+        while True:
+            connect_kwargs = self._build_connect_kwargs()
+            keepalive_task = None
+            try:
+                async with self._client.listen.v1.connect(**connect_kwargs) as connection:
+                    self._connection = connection
+                    self._connection_ready.set()
+                    connection.on(EventType.MESSAGE, self._on_message)
+                    connection.on(EventType.ERROR, self._on_error)
+                    logger.debug(f"{self}: Websocket connection initialized")
+                    keepalive_task = self.create_task(
+                        self._keepalive_handler(), f"{self}::keepalive"
+                    )
+                    await connection.start_listening()
+            except Exception as e:
+                if _is_auth_error(e):
+                    logger.error(
+                        f"{self}: Deepgram rejected the credentials (401/403) — "
+                        f"check DEEPGRAM_API_KEY. Not retrying."
+                    )
+                    await self.push_error(f"{self}: Deepgram authentication failed")
+                    return
+                logger.warning(
+                    f"{self}: Connection lost, will retry: {_redact_secrets(str(e))}"
+                )
+                await asyncio.sleep(RECONNECT_BACKOFF_S)
+            finally:
+                self._connection_ready.clear()
+                self._connection = None
+                if keepalive_task:
+                    await self.cancel_task(keepalive_task)
 
     # ---- Recovery -------------------------------------------------------
 

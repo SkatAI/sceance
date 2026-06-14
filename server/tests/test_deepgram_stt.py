@@ -20,7 +20,12 @@ from pipecat.frames.frames import (
     VADUserStoppedSpeakingFrame,
 )
 
-from deepgram_stt import StallGuardedDeepgramSTTService, _StallWatchdog
+from deepgram_stt import (
+    StallGuardedDeepgramSTTService,
+    _StallWatchdog,
+    _is_auth_error,
+    _redact_secrets,
+)
 
 
 # --- _StallWatchdog ---------------------------------------------------------
@@ -161,6 +166,82 @@ def test_on_stall_stays_silent_when_no_recovery_message():
         return spoken
 
     assert asyncio.run(run()) == []
+
+
+# --- _redact_secrets --------------------------------------------------------
+
+
+def test_redact_secrets_strips_deepgram_token():
+    fake_key = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"  # not a real credential
+    raw = f"Connection lost: headers: {{'Authorization': 'Token {fake_key}'}}, status_code: 401"
+    out = _redact_secrets(raw)
+    assert fake_key not in out
+    assert "Token" in out  # the label stays, only the secret is removed
+    assert "status_code: 401" in out  # non-secret context preserved
+
+
+def test_redact_secrets_leaves_plain_text_unchanged():
+    msg = "Connection lost, will retry: connection reset by peer"
+    assert _redact_secrets(msg) == msg
+
+
+# --- _is_auth_error ---------------------------------------------------------
+
+
+def test_is_auth_error_true_for_status_code_attribute():
+    class E(Exception):
+        status_code = 401
+
+    assert _is_auth_error(E()) is True
+
+
+def test_is_auth_error_true_for_403():
+    class E(Exception):
+        status_code = 403
+
+    assert _is_auth_error(E()) is True
+
+
+def test_is_auth_error_true_from_message_text():
+    exc = Exception(
+        "status_code: 401, body: Websocket initialized with invalid credentials."
+    )
+    assert _is_auth_error(exc) is True
+
+
+def test_is_auth_error_false_for_transient_error():
+    assert _is_auth_error(Exception("connection reset by peer")) is False
+
+
+# --- _connection_handler fail-fast ------------------------------------------
+
+
+def test_connection_handler_stops_retrying_on_auth_error():
+    async def run():
+        svc = _make_service()
+        counter = {"n": 0}
+
+        class _AuthExc(Exception):
+            status_code = 401
+
+        class _CM:
+            async def __aenter__(self_):
+                counter["n"] += 1
+                raise _AuthExc("HTTP 401 invalid credentials")
+
+            async def __aexit__(self_, *a):
+                return False
+
+        class _V1:
+            def connect(self_, **kw):
+                return _CM()
+
+        svc._client = SimpleNamespace(listen=SimpleNamespace(v1=_V1()))
+        # If the handler retried forever, wait_for would time out and fail.
+        await asyncio.wait_for(svc._connection_handler(), timeout=1.0)
+        return counter["n"]
+
+    assert asyncio.run(run()) == 1
 
 
 async def _noop() -> None:
