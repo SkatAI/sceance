@@ -5,6 +5,7 @@ TAG          ?= test
 CONTAINER    ?= sceance-local
 PORT         ?= 8080
 ENV_FILE     ?= server/.env
+LOG_DIR      ?= logs
 
 # DigitalOcean App Platform (prod). Override on the CLI if these change.
 DO_APP       ?= seal-app
@@ -12,7 +13,7 @@ DO_COMPONENT ?= sceance
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build run sh logs stop rm restart push test test-health clean prune prod-logs
+.PHONY: help build run sh logs logs-save stop rm restart push test test-health clean prune prod-logs prod-logs-save
 
 help: ## Show available make targets.
 	@echo "Available make targets:"
@@ -38,6 +39,12 @@ sh: ## Open an interactive shell inside the running container.
 
 logs: ## Tail logs from the running container.
 	docker logs -f $(CONTAINER)
+
+logs-save: ## Tail local container logs to screen AND logs/local-<ts>.log.
+	@mkdir -p $(LOG_DIR)
+	@ts=$$(date +%Y-%m-%dT%H%M%S); f="$(LOG_DIR)/local-$$ts.log"; \
+	echo "capturing to $$f (Ctrl-C to stop)"; \
+	set -o pipefail; docker logs -f $(CONTAINER) 2>&1 | tee "$$f"
 
 stop: ## Stop the running container.
 	-docker stop $(CONTAINER)
@@ -67,6 +74,12 @@ prune: ## Reclaim disk: drop dangling (<none>) images + build cache. Keeps tagge
 
 prod-logs: ## Follow live run logs from the prod DO app ($(DO_APP)). Needs doctl auth. Ctrl-C to stop.
 	doctl apps logs $(DO_APP) $(DO_COMPONENT) --type run --follow
+
+prod-logs-save: ## Follow prod logs to screen AND logs/prod-<ts>.log. Needs doctl auth.
+	@mkdir -p $(LOG_DIR)
+	@ts=$$(date +%Y-%m-%dT%H%M%S); f="$(LOG_DIR)/prod-$$ts.log"; \
+	echo "capturing to $$f (Ctrl-C to stop)"; \
+	set -o pipefail; doctl apps logs $(DO_APP) $(DO_COMPONENT) --type run --follow 2>&1 | tee "$$f"
 
 # ---- Push to GitHub (triggers App Platform deploy) -----------------
 
