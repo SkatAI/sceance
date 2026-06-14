@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-14 — Fix double-recorded speaking events
+
+- The `events` table was double-recording every speaking event
+  (`user/bot_started/stopped_speaking`). Pipecat broadcasts these as two frame
+  instances (downstream + upstream) with different `frame.id`s, so the
+  observer's id-based dedup let both through. `observer.py` now also skips a
+  frame whose `broadcast_sibling_id` was already recorded — one row per event.
+  Note: existing historical rows remain doubled; `latency.py` already tolerates
+  this when building turns.
+
 ## 2026-06-14 — Per-session latency analysis (dashboard)
 
 - New one-click **Latency analysis** on the session detail page (button left of

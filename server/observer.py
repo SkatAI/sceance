@@ -77,6 +77,16 @@ class TranscriptObserver(BaseObserver):
             fid = id(frame)
         if fid in self._seen_frame_ids:
             return
+        # Speaking events are *broadcast*: Pipecat pushes two distinct frame
+        # instances (downstream + upstream) with different ids, linked via
+        # broadcast_sibling_id. Deduping on id alone lets both through and the
+        # events table double-records every speaking event. Skip a frame whose
+        # sibling we've already recorded. No-op for non-broadcast frames
+        # (broadcast_sibling_id is None).
+        sibling_id = getattr(frame, "broadcast_sibling_id", None)
+        if sibling_id is not None and sibling_id in self._seen_frame_ids:
+            self._seen_frame_ids.add(fid)  # so this instance's later edges skip too
+            return
         self._seen_frame_ids.add(fid)
 
         # User transcript (final only — interim frames are noisy).

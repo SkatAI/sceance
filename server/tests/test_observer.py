@@ -146,6 +146,35 @@ def test_lifecycle_frames_record_configured_events(monkeypatch):
     assert rec.events == [("user_started_speaking", 999)]
 
 
+class Broadcastable:
+    """Mimics a Pipecat broadcast frame: each direction is a separate instance
+    with its own id, linked to its sibling via broadcast_sibling_id."""
+
+    def __init__(self, frame_id, sibling_id=None):
+        self.id = frame_id
+        self.broadcast_sibling_id = sibling_id
+
+
+def test_broadcast_pair_records_single_event(monkeypatch):
+    # Speaking events are broadcast as two instances (downstream + upstream)
+    # with different ids but a shared broadcast_sibling_id. The observer must
+    # record the event once, not twice. Each instance also traverses several
+    # processor edges, firing on_push_frame multiple times.
+    monkeypatch.setattr(observer, "_EVENT_FRAMES", {Broadcastable: "bot_started_speaking"})
+    rec = Recorder()
+    obs = TranscriptObserver(rec)
+
+    downstream = Broadcastable(frame_id=100, sibling_id=101)
+    upstream = Broadcastable(frame_id=101, sibling_id=100)
+
+    push(obs, downstream)
+    push(obs, upstream)
+    push(obs, downstream)  # later edges of the same instances
+    push(obs, upstream)
+
+    assert rec.events == [("bot_started_speaking", 123)]
+
+
 def _bind_assistant_frames(monkeypatch):
     monkeypatch.setattr(observer, "LLMFullResponseStartFrame", ResponseStart)
     monkeypatch.setattr(observer, "LLMTextFrame", Text)
