@@ -322,7 +322,7 @@ def test_api_sessions_maps_list_rows(monkeypatch):
                 }
             ]
 
-        async def fetchval(self, query):
+        async def fetchval(self, query, *args):
             return 1
 
     monkeypatch.setattr(
@@ -332,7 +332,7 @@ def test_api_sessions_maps_list_rows(monkeypatch):
         raising=False,
     )
 
-    result = asyncio.run(server.api_sessions(20, 0, CurrentUser("u", "e", "n", True)))
+    result = asyncio.run(server.api_sessions(20, 0, None, CurrentUser("u", "e", "n", True)))
 
     assert result["total"] == 1
     assert result["sessions"] == [
