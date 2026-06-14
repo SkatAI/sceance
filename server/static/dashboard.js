@@ -2,7 +2,7 @@
 
 import { bootAdmin, makeGetJSON } from "/auth.js";
 import {
-  fmtInt, fmtTokens, fmtDuration, fmtMs, fmtDate, shortProcessor, escapeHtml,
+  fmtInt, fmtTokens, fmtDuration, fmtDate, escapeHtml,
 } from "/format.js";
 
 let getJSON = null;
@@ -24,7 +24,6 @@ async function loadAggregate() {
   try {
     const data = await getJSON(`/api/aggregate?days=${state.days}`);
     renderAggregate(data);
-    renderTtfb(data.ttfb || []);
   } catch (e) {
     agg.innerHTML = `<div class="agg-placeholder">Could not load aggregate · ${e.message}</div>`;
   }
@@ -69,21 +68,6 @@ function renderAggregate(data) {
       <div class="value">${k.value}</div>
       <div class="accent-rule"></div>
       <div class="sub">${k.sub}</div>
-    </div>
-  `).join("");
-}
-
-function renderTtfb(ttfb) {
-  const el = document.getElementById("ttfb");
-  if (!ttfb.length) {
-    el.innerHTML = `<div class="ttfb-pill"><span class="n">no latency data yet</span></div>`;
-    return;
-  }
-  el.innerHTML = ttfb.map(t => `
-    <div class="ttfb-pill">
-      <span class="who">${shortProcessor(t.processor)} ttfb</span>
-      <span class="v">${fmtMs(t.avg_ttfb)}</span>
-      <span class="n">over ${t.n} sample${t.n === 1 ? "" : "s"}</span>
     </div>
   `).join("");
 }
