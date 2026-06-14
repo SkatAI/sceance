@@ -163,6 +163,19 @@
   `test_personas.py`.
 - Planning notes, research docs, and Claude Code permissions checked in.
 
+## 2026-06-14 — Deepgram STT stall recovery
+
+- **STT stall watchdog**: new `server/deepgram_stt.py` with
+  `StallGuardedDeepgramSTTService`, a `DeepgramSTTService` subclass that guards
+  against a silently half-open Deepgram socket — the one failure pipecat does
+  *not* auto-recover (audio/keepalive/finalize keep sending fine but no final
+  transcript ever returns, so the LLM is never triggered and the bot goes deaf
+  until hangup; observed in session e5b1d767-…, 24s STT TTFB, no transcript).
+  If a turn ends with no final transcript within `stall_timeout` (6s), it forces
+  a reconnect via the base `_request_reconnect` so the next turn lands on a
+  healthy socket, and speaks a `recovery_message` so the dead air is audible.
+- Wired into `bot.py` in place of the bare `DeepgramSTTService`.
+
 ## 2026-06-14 — Dashboard agent filter, per-session environment tag
 
 - **Dashboard sessions table**: column headers plus agent and environment

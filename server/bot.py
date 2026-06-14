@@ -50,6 +50,7 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 
 import asyncpg
 
+from deepgram_stt import StallGuardedDeepgramSTTService
 from deepgram_tts import SpeedDeepgramTTSService
 from memory import load_memory_brief
 from observer import TranscriptObserver
@@ -216,13 +217,19 @@ async def run_bot(
     # nova-3 is English-only; for non-English use nova-2 (override via stt.model).
     lang = (persona.lang or "en").lower()
     stt_model = persona.stt_model or ("nova-3" if lang.startswith("en") else "nova-2")
-    stt = DeepgramSTTService(
+    # StallGuardedDeepgramSTTService adds a watchdog on top of the base service:
+    # if a turn ends with no final transcript (a silently half-open Deepgram
+    # socket — the failure pipecat does NOT auto-recover; see deepgram_stt.py),
+    # it forces a reconnect so the next turn lands on a healthy connection and
+    # speaks `recovery_message` so the dead air is audible.
+    stt = StallGuardedDeepgramSTTService(
         api_key=os.getenv("DEEPGRAM_API_KEY"),
         settings=DeepgramSTTService.Settings(
             model=stt_model,
             language=lang,
             profanity_filter=False,
         ),
+        recovery_message="Sorry, I didn't catch that — could you say it again?",
     )
     logger.info(f"STT: {persona.stt_provider} model={stt_model} language={lang}")
 

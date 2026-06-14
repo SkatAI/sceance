@@ -225,9 +225,10 @@ def test_run_bot_wires_pipeline_and_kickoff_with_memory(monkeypatch):
             def __init__(self, **kwargs):
                 self.kwargs = kwargs
 
-        def __init__(self, api_key, settings):
+        def __init__(self, api_key, settings, recovery_message=None, **kwargs):
             self.api_key = api_key
             self.settings = settings
+            self.recovery_message = recovery_message
 
     class FakeContext:
         def add_message(self, message):
@@ -316,7 +317,7 @@ def test_run_bot_wires_pipeline_and_kickoff_with_memory(monkeypatch):
 
     transport = FakeTransport()
     monkeypatch.setattr(bot, "load_persona", lambda agent_name: persona)
-    monkeypatch.setattr(bot, "DeepgramSTTService", FakeSTTService)
+    monkeypatch.setattr(bot, "StallGuardedDeepgramSTTService", FakeSTTService)
     monkeypatch.setattr(bot, "build_tts", lambda persona: "tts")
     monkeypatch.setattr(bot, "build_llm", lambda persona: "llm")
     monkeypatch.setattr(bot, "LLMContext", FakeContext)
@@ -358,7 +359,7 @@ def test_run_bot_records_but_skips_memory_when_persona_memory_off(monkeypatch):
             def __init__(self, **kwargs):
                 self.kwargs = kwargs
 
-        def __init__(self, api_key, settings):
+        def __init__(self, api_key, settings, recovery_message=None, **kwargs):
             self.settings = settings
 
     class FakeAggregatorPair:
@@ -418,7 +419,7 @@ def test_run_bot_records_but_skips_memory_when_persona_memory_off(monkeypatch):
         raise AssertionError("memory brief must not load when memory is off")
 
     monkeypatch.setattr(bot, "load_persona", lambda agent_name: persona)
-    monkeypatch.setattr(bot, "DeepgramSTTService", FakeSTTService)
+    monkeypatch.setattr(bot, "StallGuardedDeepgramSTTService", FakeSTTService)
     monkeypatch.setattr(bot, "build_tts", lambda persona: "tts")
     monkeypatch.setattr(bot, "build_llm", lambda persona: "llm")
     monkeypatch.setattr(bot, "LLMContext", lambda: object())
