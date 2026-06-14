@@ -32,3 +32,6 @@ notes.md
 next.md
 inigo_deploy_spec.md
 *.plan.md
+
+logs/
+logs/*.log
