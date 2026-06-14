@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-06-14 — Pre-warm LLM connection to cut intro latency
+
+- The agent's self-introduction paid full LLM cold-start cost (~3.4s TTFB, ~4s
+  to first word) because the kickoff was the session's first OpenAI/Anthropic/
+  Groq request. `bot.py` now fires a cheap `models.list()` on the LLM service's
+  own `_client` (the pool the pipeline reuses) the moment the bot boots —
+  fire-and-forget, during the idle gap before the caller connects — so the intro
+  turn hits a warm connection. Intro is otherwise unchanged (still LLM-generated
+  and memory-personalized). Best-effort: prewarm failures are swallowed, never
+  breaking a session. Payoff scales with join delay (full on Daily, partial on
+  instant local joins).
+
 ## 2026-06-14 — Fix double-recorded speaking events
 
 - The `events` table was double-recording every speaking event

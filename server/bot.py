@@ -21,6 +21,8 @@ Run the bot using::
 """
 
 
+import asyncio
+
 from pipecat.transports.daily.transport import DailyTransport, DailyParams
 from pipecat.services.openai.responses.llm import OpenAIResponsesHttpLLMService
 from pipecat.services.anthropic.llm import AnthropicLLMService
@@ -145,6 +147,29 @@ def build_llm(persona: Persona):
     raise ValueError(f"Unknown LLM provider in persona: {provider!r}")
 
 
+async def prewarm_llm(llm) -> None:
+    """Open the LLM's HTTP connection during the idle gap before the caller
+    joins, so the first real turn (the intro) doesn't pay cold-start cost.
+
+    The first OpenAI/Anthropic/Groq request of a session eats DNS+TLS+HTTP
+    setup (~3.4s TTFB observed); later turns reuse the pooled connection and are
+    fast. We fire a cheap ``models.list()`` on the service's own ``_client`` —
+    the same pool the pipeline reuses for completions — and discard it. It never
+    touches the pipeline, so nothing is spoken or recorded.
+
+    Best-effort: any failure (offline, auth, SDK change) is swallowed so a
+    session is never broken — worst case is the pre-existing cold start.
+    """
+    client = getattr(llm, "_client", None)
+    if client is None:
+        return
+    try:
+        await client.models.list()
+        logger.info("LLM connection pre-warmed")
+    except Exception as e:
+        logger.debug(f"LLM prewarm skipped: {e}")
+
+
 def build_tts(persona: Persona):
     """Build the right pipecat TTS service for a persona, routed on
     `persona.tts_provider` (`cartesia` / `deepgram` / `gradium`). The seam is
@@ -241,6 +266,11 @@ async def run_bot(
     # LLM service (provider routed from persona.llm_provider)
     llm = build_llm(persona)
     logger.info(f"LLM: {persona.llm_provider}:{persona.llm_model}")
+
+    # Warm the LLM connection now, while the caller is still connecting, so the
+    # intro turn isn't the cold first request. Fire-and-forget; keep a reference
+    # so the task isn't garbage-collected mid-flight.
+    prewarm_task = asyncio.create_task(prewarm_llm(llm))
 
 
 

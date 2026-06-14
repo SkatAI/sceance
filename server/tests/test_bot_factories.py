@@ -103,6 +103,48 @@ def test_build_llm_rejects_unknown_provider():
         bot.build_llm(persona)
 
 
+def test_prewarm_llm_warms_the_shared_client_pool():
+    # prewarm should hit the service's own _client (the pool the pipeline reuses)
+    # with a cheap models.list() call.
+    called = {}
+
+    class FakeModels:
+        async def list(self):
+            called["list"] = True
+
+    class FakeClient:
+        models = FakeModels()
+
+    class FakeLLM:
+        _client = FakeClient()
+
+    asyncio.run(bot.prewarm_llm(FakeLLM()))
+
+    assert called.get("list") is True
+
+
+def test_prewarm_llm_swallows_errors():
+    # A prewarm failure must never break a session.
+    class FakeModels:
+        async def list(self):
+            raise RuntimeError("offline")
+
+    class FakeClient:
+        models = FakeModels()
+
+    class FakeLLM:
+        _client = FakeClient()
+
+    asyncio.run(bot.prewarm_llm(FakeLLM()))  # must not raise
+
+
+def test_prewarm_llm_noop_without_client():
+    class FakeLLM:
+        pass
+
+    asyncio.run(bot.prewarm_llm(FakeLLM()))  # no _client → no-op, no raise
+
+
 def test_build_tts_creates_cartesia_service(monkeypatch):
     monkeypatch.setattr(bot, "CartesiaTTSService", FakeCartesiaService)
     monkeypatch.setenv("CARTESIA_API_KEY", "cartesia-key")
@@ -320,6 +362,13 @@ def test_run_bot_wires_pipeline_and_kickoff_with_memory(monkeypatch):
     monkeypatch.setattr(bot, "StallGuardedDeepgramSTTService", FakeSTTService)
     monkeypatch.setattr(bot, "build_tts", lambda persona: "tts")
     monkeypatch.setattr(bot, "build_llm", lambda persona: "llm")
+
+    prewarmed = []
+
+    async def fake_prewarm(llm):
+        prewarmed.append(llm)
+
+    monkeypatch.setattr(bot, "prewarm_llm", fake_prewarm)
     monkeypatch.setattr(bot, "LLMContext", FakeContext)
     monkeypatch.setattr(bot, "LLMContextAggregatorPair", FakeAggregatorPair)
     monkeypatch.setattr(bot, "LLMUserAggregatorParams", lambda **kwargs: kwargs)
@@ -345,6 +394,7 @@ def test_run_bot_wires_pipeline_and_kickoff_with_memory(monkeypatch):
     ]
     assert recorded_messages == [{"role": "system", "text": "Opening."}]
     assert queued_frames == ["run-frame"]
+    assert prewarmed == ["llm"]  # connection pre-warm fired for the built LLM
 
 
 def test_run_bot_records_but_skips_memory_when_persona_memory_off(monkeypatch):
