@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -26,6 +27,11 @@ from storage import bulk_insert
 BATCH_MAX = 50
 BATCH_INTERVAL_S = 1.0
 QUEUE_MAX = 10_000
+
+# Where the server is running: 'local' (dev) by default, 'online' when
+# DEPLOY_ENV is set in the deployed Pipecat Cloud secret set. Recorded on each
+# session row so dev/test sessions can be told apart from real ones.
+DEPLOY_ENV = os.getenv("DEPLOY_ENV", "local").strip().lower() or "local"
 
 
 def _utcnow() -> datetime:
@@ -66,8 +72,8 @@ class SessionRecorder:
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO sessions (id, persona_name, persona_json, lang, started_at, user_id)
-                VALUES ($1, $2, $3::jsonb, $4, $5, $6)
+                INSERT INTO sessions (id, persona_name, persona_json, lang, started_at, user_id, environment)
+                VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)
                 """,
                 self.session_id,
                 self._persona.name,
@@ -75,6 +81,7 @@ class SessionRecorder:
                 self._persona.lang,
                 _utcnow(),
                 self._user_id,
+                DEPLOY_ENV,
             )
         self._drain_task = asyncio.create_task(self._drain_loop())
         logger.info(f"SessionRecorder started for session {self.session_id}")
