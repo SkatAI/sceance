@@ -147,6 +147,36 @@
   instead of an inline expand; shared formatters/auth extracted into
   `format.js` / `auth.js`.
 
+## 2026-06-13 — Markdown system prompts, Monty Spock, more TTS/LLM providers
+
+- **System prompts moved to markdown**: persona prompts pulled out of the JSON
+  files into `personas/systemprompts/<name>.md`, loaded by `server/personas.py`.
+  Came with a persona reorg/rename — `inigo2/3*` → `inigo_v2_en` / `inigo_v3` /
+  `inigo_v4_fr`, and `marie_egg` → `marie_weather`.
+- **`monty_spock` persona** added (JSON + markdown prompt).
+- **Groq LLM provider**: `build_llm` now routes a `groq:` prefix to Groq-hosted
+  models (the swappable fast-LLM path from `notes.md`).
+- **Deepgram TTS speed control**: new `server/deepgram_tts.py` wrapper exposing a
+  per-persona speed setting, routed through `build_tts`.
+- **Gradium (Kyutai) TTS provider**: added as another `tts.provider` option,
+  plus `monty_spock` voice tuning. Test coverage in `test_bot_factories.py` /
+  `test_personas.py`.
+- Planning notes, research docs, and Claude Code permissions checked in.
+
+## 2026-06-14 — Dashboard agent filter, per-session environment tag
+
+- **Dashboard sessions table**: column headers plus agent and environment
+  filter dropdowns (the `envt` column sits right of the agent name); the
+  `/api/sessions` query gained composable `persona` + `environment` filter
+  params and returns the distinct values to populate the dropdowns (`server.py`,
+  `static/dashboard.{html,js,css}`).
+- **Per-session environment tag**: `migrations/004_environment.sql` adds an
+  `environment` column to `sessions`; `recorder.py` stamps each row from the
+  `DEPLOY_ENV` env var — `local` (dev, set in `.env`) or `online` (deployed
+  Pipecat Cloud secret set). Falls back to `unknown` when unset, and existing
+  rows backfilled to `unknown` since their location can't be known in hindsight.
+- Minor: `monty_spock` tts key reorder; test fix for the new persona filter param.
+
 ## Next
 
 - Decide whether to wire a second agent (medium + spirit / multi-persona) —

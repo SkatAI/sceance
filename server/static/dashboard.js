@@ -13,6 +13,7 @@ const state = {
   offset: 0,
   total: 0,
   persona: "",
+  environment: "",
 };
 
 // ─── Aggregate / KPIs ───────────────────────────────────────────────
@@ -95,9 +96,11 @@ async function loadSessions() {
   try {
     const params = new URLSearchParams({ limit: state.limit, offset: state.offset });
     if (state.persona) params.set("persona", state.persona);
+    if (state.environment) params.set("environment", state.environment);
     const data = await getJSON(`/api/sessions?${params}`);
     state.total = data.total;
     renderPersonaFilter(data.personas || []);
+    renderEnvFilter(data.environments || []);
     renderSessions(data.sessions);
     renderPager();
   } catch (e) {
@@ -121,6 +124,7 @@ function renderSessions(sessions) {
             ${escapeHtml(s.persona_name || "(unnamed)")}
             <span class="lang">${escapeHtml(lang)}</span>
           </div>
+          <div class="s-env">${escapeHtml(s.environment || "—")}</div>
           <div class="s-date">${fmtDate(s.started_at)}</div>
           <div class="s-dur">${fmtDuration(s.duration_s)}</div>
           <div class="s-msgs">${s.msg_count} turn${s.msg_count === 1 ? "" : "s"}</div>
@@ -135,18 +139,27 @@ function renderSessions(sessions) {
   }).join("");
 }
 
-function renderPersonaFilter(personas) {
-  const sel = document.getElementById("persona-filter");
+// Populate a filter <select> with options, preserving the current selection.
+// Skips the rebuild if options are unchanged so the dropdown isn't disturbed
+// while the user interacts with it.
+function renderFilter(id, allLabel, values, selected) {
+  const sel = document.getElementById(id);
   if (!sel) return;
-  // Rebuild options but keep the current selection. Skip if unchanged to avoid
-  // disturbing the dropdown while the user is interacting with it.
-  const want = ["", ...personas];
+  const want = ["", ...values];
   const have = Array.from(sel.options).map(o => o.value);
   if (have.length === want.length && have.every((v, i) => v === want[i])) return;
   sel.innerHTML =
-    `<option value="">All agents</option>` +
-    personas.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join("");
-  sel.value = state.persona;
+    `<option value="">${escapeHtml(allLabel)}</option>` +
+    values.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
+  sel.value = selected;
+}
+
+function renderPersonaFilter(personas) {
+  renderFilter("persona-filter", "All agents", personas, state.persona);
+}
+
+function renderEnvFilter(environments) {
+  renderFilter("env-filter", "All envts", environments, state.environment);
 }
 
 function renderPager() {
@@ -182,11 +195,11 @@ function bindPeriod() {
   });
 }
 
-function bindPersonaFilter() {
-  const sel = document.getElementById("persona-filter");
+function bindFilter(id, key) {
+  const sel = document.getElementById(id);
   if (!sel) return;
   sel.addEventListener("change", () => {
-    state.persona = sel.value;
+    state[key] = sel.value;
     state.offset = 0;
     loadSessions();
   });
@@ -200,7 +213,8 @@ async function boot() {
   getJSON = makeGetJSON(auth.getToken);
 
   bindPeriod();
-  bindPersonaFilter();
+  bindFilter("persona-filter", "persona");
+  bindFilter("env-filter", "environment");
   loadAggregate();
   loadSessions();
 }

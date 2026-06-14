@@ -28,10 +28,11 @@ BATCH_MAX = 50
 BATCH_INTERVAL_S = 1.0
 QUEUE_MAX = 10_000
 
-# Where the server is running: 'local' (dev) by default, 'online' when
-# DEPLOY_ENV is set in the deployed Pipecat Cloud secret set. Recorded on each
-# session row so dev/test sessions can be told apart from real ones.
-DEPLOY_ENV = os.getenv("DEPLOY_ENV", "local").strip().lower() or "local"
+# Where the server is running: 'local' (dev, set in .env) or 'online' (set in
+# the deployed Pipecat Cloud secret set). Recorded on each session row so
+# dev/test sessions can be told apart from real ones. Falls back to 'unknown'
+# when DEPLOY_ENV is unset rather than assuming a location.
+DEPLOY_ENV = os.getenv("DEPLOY_ENV", "unknown").strip().lower() or "unknown"
 
 
 def _utcnow() -> datetime:

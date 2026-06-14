@@ -309,6 +309,7 @@ def test_api_sessions_maps_list_rows(monkeypatch):
                 {
                     "id": sid,
                     "persona_name": "Marie",
+                    "environment": "local",
                     "lang": "fr",
                     "started_at": started,
                     "ended_at": None,
@@ -332,13 +333,14 @@ def test_api_sessions_maps_list_rows(monkeypatch):
         raising=False,
     )
 
-    result = asyncio.run(server.api_sessions(20, 0, None, CurrentUser("u", "e", "n", True)))
+    result = asyncio.run(server.api_sessions(20, 0, None, None, CurrentUser("u", "e", "n", True)))
 
     assert result["total"] == 1
     assert result["sessions"] == [
         {
             "id": str(sid),
             "persona_name": "Marie",
+            "environment": "local",
             "lang": "fr",
             "started_at": started.isoformat(),
             "ended_at": None,

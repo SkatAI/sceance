@@ -343,20 +343,25 @@ async def api_sessions(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     persona: str | None = Query(None),
+    environment: str | None = Query(None),
     _admin: CurrentUser = Depends(require_admin),
 ):
     pool = app.state.db_pool
-    # Optional filter by persona/agent name. Built as a shared WHERE clause so
-    # the page query and its total count stay in sync.
-    where = ""
+    # Optional filters by persona/agent name and environment. Built as a shared
+    # WHERE clause so the page query and its total count stay in sync.
+    conditions: list[str] = []
     filter_args: list = []
     if persona:
-        where = "WHERE s.persona_name = $1"
-        filter_args = [persona]
+        filter_args.append(persona)
+        conditions.append(f"s.persona_name = ${len(filter_args)}")
+    if environment:
+        filter_args.append(environment)
+        conditions.append(f"s.environment = ${len(filter_args)}")
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             f"""
-            SELECT s.id, s.persona_name, s.lang, s.started_at, s.ended_at,
+            SELECT s.id, s.persona_name, s.environment, s.lang, s.started_at, s.ended_at,
                    extract(epoch FROM (s.ended_at - s.started_at)) AS duration_s,
                    s.total_prompt_tokens, s.total_completion_tokens,
                    s.total_cache_read_tokens, s.total_cache_creation_tokens,
@@ -380,15 +385,25 @@ async def api_sessions(
             ORDER BY persona_name
             """
         )
+        # Distinct environments across ALL sessions, for the filter dropdown.
+        env_rows = await conn.fetch(
+            """
+            SELECT DISTINCT environment FROM sessions
+            WHERE environment IS NOT NULL
+            ORDER BY environment
+            """
+        )
     return {
         "total": total,
         "limit": limit,
         "offset": offset,
         "personas": [r["persona_name"] for r in persona_rows],
+        "environments": [r["environment"] for r in env_rows],
         "sessions": [
             {
                 "id": str(r["id"]),
                 "persona_name": r["persona_name"],
+                "environment": r["environment"],
                 "lang": r["lang"],
                 "started_at": _iso(r["started_at"]),
                 "ended_at": _iso(r["ended_at"]),

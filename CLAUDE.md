@@ -4,6 +4,13 @@ A voice-agent demo: the user dials into a "séance" and converses with a medium 
 
 See `readme.md` for the product sketch and `notes.md` for the full stack rationale.
 
+## Changelog
+
+Keep `changelog.md` updated in pair with commits. Record only the important,
+user- or developer-facing changes (new features, providers, schema/migrations,
+behavior changes) — not every small edit. Group entries by date under the
+existing format.
+
 ## Layout
 
 - `server/` — Pipecat backend (Python, `uv`-managed). Currently a near-verbatim copy of the Pipecat quickstart, used as the bootstrap point.
