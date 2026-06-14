@@ -1,5 +1,8 @@
 # path forward
 
+- Stall detection is heuristic (SQL-only, no log confirmation) as planned — the log cross-check is the deferred next iteration.
+
+
 ## June 13th, 14th
 
 - costs, measure

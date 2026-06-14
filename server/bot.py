@@ -95,6 +95,20 @@ def _language_directive(lang: str) -> str:
     )
 
 
+# Spoken when STT stalls (no final transcript). Keyed by persona language so a
+# non-English session doesn't break into English on a recovery prompt.
+_STT_RECOVERY_MESSAGES = {
+    "en": "Sorry, I didn't catch that — could you say it again?",
+    "fr": "Pardon, je n'ai pas saisi — pouvez-vous répéter ?",
+}
+
+
+def _stt_recovery_message(lang: str) -> str:
+    return _STT_RECOVERY_MESSAGES.get(
+        lang.split("-")[0].lower(), _STT_RECOVERY_MESSAGES["en"]
+    )
+
+
 def build_llm(persona: Persona):
     """Build the right pipecat LLM service for a persona, routed on
     `persona.llm_provider` (`openai` / `anthropic` / `groq`)."""
@@ -254,7 +268,7 @@ async def run_bot(
             language=lang,
             profanity_filter=False,
         ),
-        recovery_message="Sorry, I didn't catch that — could you say it again?",
+        recovery_message=_stt_recovery_message(lang),
     )
     logger.info(f"STT: {persona.stt_provider} model={stt_model} language={lang}")
 

@@ -53,6 +53,16 @@ def test_language_directive_maps_known_and_unknown_languages():
     assert "Always speak English" in bot._language_directive("es")
 
 
+def test_stt_recovery_message_localizes_by_language():
+    # The STT stall watchdog speaks this; it must match the persona language so a
+    # French session doesn't break into English on a recovery prompt.
+    assert bot._stt_recovery_message("fr").startswith("Pardon")
+    assert bot._stt_recovery_message("fr-FR").startswith("Pardon")
+    assert "Sorry" in bot._stt_recovery_message("en-US")
+    # Unknown language falls back to English.
+    assert "Sorry" in bot._stt_recovery_message("es")
+
+
 def test_build_llm_creates_openai_service(monkeypatch):
     monkeypatch.setattr(bot, "OpenAIResponsesHttpLLMService", FakeOpenAIService)
     monkeypatch.setenv("OPENAI_API_KEY", "openai-key")

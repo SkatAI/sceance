@@ -3,7 +3,7 @@
   "agent": {
     "active": true,
     "lang": "en",
-    "memory": true
+    "memory": false
   },
   "persona": {
     "name": "Inigo",
@@ -24,14 +24,14 @@
     "description": "Claude Haiku 4.5",
     "temperature": 1
   },
-  "tts": {
+  "tts_deepgram": {
     "provider": "deepgram",
     "model": "aura-2-atlas-en",
     "voice_id": null,
     "voice_name": "Atlas",
     "voice_description": "American English (Aura-2)"
   },
-  "tts_backup": {
+  "tts": {
     "provider": "cartesia",
     "model": null,
     "voice_id": "02aeee94-c02b-456e-be7a-659672acf82d",
