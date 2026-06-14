@@ -176,15 +176,3 @@
   Pipecat Cloud secret set). Falls back to `unknown` when unset, and existing
   rows backfilled to `unknown` since their location can't be known in hindsight.
 - Minor: `monty_spock` tts key reorder; test fix for the new persona filter param.
-
-## Next
-
-- Decide whether to wire a second agent (medium + spirit / multi-persona) —
-  Director + per-turn settings swap over a single shared `LLMContext`.
-- Migrate the operator surfaces from the static `server/static/*` pages to the
-  planned React + Vite frontend (séance + dashboard surfaces).
-- Swappable fast LLM (Groq-Llama / Gemini Flash) to cut the dominant LLM-TTFB
-  latency term; measure TTFB against Haiku per persona.
-- A/B `TextAggregationMode` TOKEN vs SENTENCE on a live persona to quantify the
-  first-word latency win vs number/abbreviation normalization cost.
-- ElevenLabs TTS (shared voice library as the casting pool) per `notes.md`.
