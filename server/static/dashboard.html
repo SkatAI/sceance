@@ -35,6 +35,18 @@
       <h2>Recent séances</h2>
       <div class="pager" id="pager"></div>
     </div>
+    <div class="session-head-row" role="row">
+      <div class="sh-persona">
+        <select id="persona-filter" class="persona-filter" aria-label="Filter by agent">
+          <option value="">All agents</option>
+        </select>
+      </div>
+      <div class="sh-date">Started</div>
+      <div class="sh-dur">Duration</div>
+      <div class="sh-msgs">Turns</div>
+      <div class="sh-tok">Tokens</div>
+      <div class="sh-chev" aria-hidden="true"></div>
+    </div>
     <ol class="session-list" id="sessions" aria-live="polite">
       <li class="loading">Loading…</li>
     </ol>

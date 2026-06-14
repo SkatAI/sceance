@@ -342,12 +342,20 @@ async def api_aggregate(
 async def api_sessions(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    persona: str | None = Query(None),
     _admin: CurrentUser = Depends(require_admin),
 ):
     pool = app.state.db_pool
+    # Optional filter by persona/agent name. Built as a shared WHERE clause so
+    # the page query and its total count stay in sync.
+    where = ""
+    filter_args: list = []
+    if persona:
+        where = "WHERE s.persona_name = $1"
+        filter_args = [persona]
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """
+            f"""
             SELECT s.id, s.persona_name, s.lang, s.started_at, s.ended_at,
                    extract(epoch FROM (s.ended_at - s.started_at)) AS duration_s,
                    s.total_prompt_tokens, s.total_completion_tokens,
@@ -355,16 +363,28 @@ async def api_sessions(
                    s.total_tts_chars,
                    (SELECT count(*) FROM messages WHERE session_id = s.id) AS msg_count
             FROM sessions s
+            {where}
             ORDER BY s.started_at DESC
-            LIMIT $1 OFFSET $2
+            LIMIT ${len(filter_args) + 1} OFFSET ${len(filter_args) + 2}
             """,
-            limit, offset,
+            *filter_args, limit, offset,
         )
-        total = await conn.fetchval("SELECT count(*) FROM sessions")
+        total = await conn.fetchval(
+            f"SELECT count(*) FROM sessions s {where}", *filter_args
+        )
+        # Distinct persona names across ALL sessions, for the filter dropdown.
+        persona_rows = await conn.fetch(
+            """
+            SELECT DISTINCT persona_name FROM sessions
+            WHERE persona_name IS NOT NULL
+            ORDER BY persona_name
+            """
+        )
     return {
         "total": total,
         "limit": limit,
         "offset": offset,
+        "personas": [r["persona_name"] for r in persona_rows],
         "sessions": [
             {
                 "id": str(r["id"]),

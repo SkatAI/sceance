@@ -12,6 +12,7 @@ const state = {
   limit: 20,
   offset: 0,
   total: 0,
+  persona: "",
 };
 
 // ─── Aggregate / KPIs ───────────────────────────────────────────────
@@ -92,8 +93,11 @@ async function loadSessions() {
   const list = document.getElementById("sessions");
   list.innerHTML = `<li class="loading">Loading…</li>`;
   try {
-    const data = await getJSON(`/api/sessions?limit=${state.limit}&offset=${state.offset}`);
+    const params = new URLSearchParams({ limit: state.limit, offset: state.offset });
+    if (state.persona) params.set("persona", state.persona);
+    const data = await getJSON(`/api/sessions?${params}`);
     state.total = data.total;
+    renderPersonaFilter(data.personas || []);
     renderSessions(data.sessions);
     renderPager();
   } catch (e) {
@@ -131,6 +135,20 @@ function renderSessions(sessions) {
   }).join("");
 }
 
+function renderPersonaFilter(personas) {
+  const sel = document.getElementById("persona-filter");
+  if (!sel) return;
+  // Rebuild options but keep the current selection. Skip if unchanged to avoid
+  // disturbing the dropdown while the user is interacting with it.
+  const want = ["", ...personas];
+  const have = Array.from(sel.options).map(o => o.value);
+  if (have.length === want.length && have.every((v, i) => v === want[i])) return;
+  sel.innerHTML =
+    `<option value="">All agents</option>` +
+    personas.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join("");
+  sel.value = state.persona;
+}
+
 function renderPager() {
   const pager = document.getElementById("pager");
   const page = Math.floor(state.offset / state.limit) + 1;
@@ -164,6 +182,16 @@ function bindPeriod() {
   });
 }
 
+function bindPersonaFilter() {
+  const sel = document.getElementById("persona-filter");
+  if (!sel) return;
+  sel.addEventListener("change", () => {
+    state.persona = sel.value;
+    state.offset = 0;
+    loadSessions();
+  });
+}
+
 // ─── Boot ───────────────────────────────────────────────────────────
 
 async function boot() {
@@ -172,6 +200,7 @@ async function boot() {
   getJSON = makeGetJSON(auth.getToken);
 
   bindPeriod();
+  bindPersonaFilter();
   loadAggregate();
   loadSessions();
 }
