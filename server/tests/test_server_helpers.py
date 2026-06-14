@@ -209,6 +209,10 @@ def test_api_session_detail_formats_session_rows(monkeypatch):
 
     class Connection:
         async def fetchrow(self, query, *args):
+            # api_session_detail also looks up stored latency analysis; mimic
+            # the "none generated yet" path so it doesn't get the session row.
+            if "session_latency_analysis" in query:
+                return None
             return {
                 "id": sid,
                 "persona_name": "Marie",
