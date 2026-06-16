@@ -1,55 +1,45 @@
-"""Non-blocking session recorder.
+"""Session recorder — orchestrates the session lifecycle.
 
-The observer pushes records onto an in-memory `asyncio.Queue` (microsecond cost,
-zero awaits) and a background task drains them in batches to Supabase. This
-keeps the audio pipeline off the network round-trip path.
-
-Trade-off: if the process crashes mid-session, up to one batch interval of
-records is lost. Acceptable per the plan.
+The recorder owns the session row (create on `start`, finalize on `close`),
+accumulates usage totals, and enqueues transcript/event/metric rows for the
+background drain. The mechanical pieces live in `recording.py`:
+`RecordDrainQueue` (the non-blocking queue + batched flush) and `UsageTotals`.
+Cross-session memory summarization is scheduled through an injectable callable so
+`close()` never spawns a background task directly.
 """
 
 from __future__ import annotations
 
 import asyncio
-import enum
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 import asyncpg
 from loguru import logger
 
 from memory import summarize_and_persist
 from personas import Persona
+from recording import RecordDrainQueue, RecordKind, UsageTotals
 from settings import get_settings
-from storage import (
-    finalize_session,
-    insert_events,
-    insert_messages,
-    insert_metrics,
-    insert_session,
-)
+from storage import finalize_session, insert_session
 
-BATCH_MAX = 50
-BATCH_INTERVAL_S = 1.0
-QUEUE_MAX = 10_000
-
-
-class RecordKind(enum.Enum):
-    """Which repository method a queued row is destined for."""
-
-    MESSAGE = enum.auto()
-    EVENT = enum.auto()
-    METRIC = enum.auto()
+__all__ = ["RecordKind", "SessionRecorder", "NullSessionRecorder"]
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _default_summary_scheduler(pool, session_id, user_id) -> None:
+    """Fire-and-forget cross-session memory summarization. Isolated here (and
+    injectable) so `SessionRecorder.close()` doesn't create background tasks
+    directly."""
+    asyncio.create_task(summarize_and_persist(pool, session_id, str(user_id)))
+
+
 class SessionRecorder:
-    """Owns a session row and a background drain loop for child rows."""
+    """Owns a session row and a background drain queue for child rows."""
 
     def __init__(
         self,
@@ -57,6 +47,9 @@ class SessionRecorder:
         persona: Persona,
         user_id: str | None = None,
         update_memory: bool = True,
+        *,
+        schedule_summary=None,
+        queue: RecordDrainQueue | None = None,
     ):
         self._pool = pool
         self._persona = persona
@@ -65,17 +58,10 @@ class SessionRecorder:
         # observability but no cross-session user memory is written at close.
         self._update_memory = update_memory
         self.session_id: uuid.UUID = uuid.uuid4()
-        self._queue: asyncio.Queue[tuple[RecordKind, dict] | None] = asyncio.Queue(maxsize=QUEUE_MAX)
-        self._drain_task: asyncio.Task | None = None
+        self._queue = queue if queue is not None else RecordDrainQueue(pool)
+        self._schedule_summary = schedule_summary or _default_summary_scheduler
+        self._totals = UsageTotals()
         self._closed = False
-        # Token / character totals, updated as llm_usage / tts_usage flow by.
-        self._totals = {
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "cache_read_tokens": 0,
-            "cache_creation_tokens": 0,
-            "tts_chars": 0,
-        }
 
     async def start(self) -> None:
         """Create the session row, then launch the drain loop."""
@@ -91,7 +77,7 @@ class SessionRecorder:
             # sessions be told apart from real ones on the session row.
             environment=get_settings().deploy_env,
         )
-        self._drain_task = asyncio.create_task(self._drain_loop())
+        self._queue.start()
         logger.info(f"SessionRecorder started for session {self.session_id}")
 
     # ---- Hot path: non-blocking enqueue ---------------------------------
@@ -103,7 +89,7 @@ class SessionRecorder:
         language: str | None = None,
         stt_timestamp: str | None = None,
     ) -> None:
-        self._enqueue(RecordKind.MESSAGE, {
+        self._queue.enqueue(RecordKind.MESSAGE, {
             "session_id": self.session_id,
             "role": role,
             "text": text,
@@ -113,7 +99,7 @@ class SessionRecorder:
         })
 
     def record_event(self, kind: str, timestamp_ns: int, payload: dict | None = None) -> None:
-        self._enqueue(RecordKind.EVENT, {
+        self._queue.enqueue(RecordKind.EVENT, {
             "session_id": self.session_id,
             "kind": kind,
             "timestamp_ns": int(timestamp_ns),
@@ -134,14 +120,16 @@ class SessionRecorder:
     ) -> None:
         # Update running totals (cheap, in-memory).
         if kind == "llm_usage":
-            self._totals["prompt_tokens"] += prompt_tokens or 0
-            self._totals["completion_tokens"] += completion_tokens or 0
-            self._totals["cache_read_tokens"] += cache_read_input_tokens or 0
-            self._totals["cache_creation_tokens"] += cache_creation_input_tokens or 0
+            self._totals.add_llm(
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cache_read_input_tokens=cache_read_input_tokens,
+                cache_creation_input_tokens=cache_creation_input_tokens,
+            )
         elif kind == "tts_usage" and value_num is not None:
-            self._totals["tts_chars"] += int(value_num)
+            self._totals.add_tts(value_num)
 
-        self._enqueue(RecordKind.METRIC, {
+        self._queue.enqueue(RecordKind.METRIC, {
             "session_id": self.session_id,
             "processor": processor,
             "model": model,
@@ -155,96 +143,20 @@ class SessionRecorder:
             "reasoning_tokens": reasoning_tokens,
         })
 
-    def _enqueue(self, kind: RecordKind, row: dict[str, Any]) -> None:
-        if self._closed:
-            return
-        try:
-            self._queue.put_nowait((kind, row))
-        except asyncio.QueueFull:
-            logger.warning(f"SessionRecorder queue full; dropping {kind.name} row")
-
-    # ---- Cold path: background drain ------------------------------------
-
-    async def _drain_loop(self) -> None:
-        """Pull from the queue, batch by table, flush to Supabase."""
-        try:
-            while True:
-                batch: list[tuple[RecordKind, dict]] = []
-                try:
-                    item = await asyncio.wait_for(self._queue.get(), timeout=BATCH_INTERVAL_S)
-                except asyncio.TimeoutError:
-                    continue
-                if item is None:  # sentinel: shutdown
-                    break
-                batch.append(item)
-                # Drain whatever else is sitting in the queue, up to BATCH_MAX.
-                while len(batch) < BATCH_MAX:
-                    try:
-                        nxt = self._queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
-                    if nxt is None:
-                        await self._flush(batch)
-                        return
-                    batch.append(nxt)
-                await self._flush(batch)
-        except asyncio.CancelledError:
-            # Best-effort final flush.
-            leftover: list[tuple[RecordKind, dict]] = []
-            while True:
-                try:
-                    leftover.append(self._queue.get_nowait())
-                except asyncio.QueueEmpty:
-                    break
-            await self._flush([x for x in leftover if x is not None])
-            raise
-
-    async def _flush(self, batch: list[tuple[RecordKind, dict]]) -> None:
-        if not batch:
-            return
-        # The repository method for each kind owns its table name + column order.
-        inserters = {
-            RecordKind.MESSAGE: insert_messages,
-            RecordKind.EVENT: insert_events,
-            RecordKind.METRIC: insert_metrics,
-        }
-        by_kind: dict[RecordKind, list[dict]] = {}
-        for kind, row in batch:
-            by_kind.setdefault(kind, []).append(row)
-        for kind, rows in by_kind.items():
-            try:
-                await inserters[kind](self._pool, rows)
-            except Exception as e:
-                logger.exception(f"SessionRecorder flush of {kind.name} rows failed: {e}")
-
     # ---- Shutdown -------------------------------------------------------
 
     async def close(self) -> None:
         if self._closed:
             return
         self._closed = True
-        # Signal drain loop to exit after one final flush.
-        try:
-            self._queue.put_nowait(None)
-        except asyncio.QueueFull:
-            pass
-        if self._drain_task is not None:
-            try:
-                await asyncio.wait_for(self._drain_task, timeout=5.0)
-            except asyncio.TimeoutError:
-                logger.warning("SessionRecorder drain loop did not finish in time; cancelling")
-                self._drain_task.cancel()
-                try:
-                    await self._drain_task
-                except (asyncio.CancelledError, Exception):
-                    pass
 
-        # Kick off summarization in the background. Fire-and-forget: we do not
-        # await this — `close()` should return promptly so the bot task can exit.
+        # Drain and stop the background queue (one final flush).
+        await self._queue.stop()
+
+        # Schedule cross-session memory summarization (isolated/injected — never a
+        # raw create_task here). We do not await it: close() should return promptly.
         if self._update_memory and self._user_id is not None:
-            asyncio.create_task(
-                summarize_and_persist(self._pool, self.session_id, str(self._user_id))
-            )
+            self._schedule_summary(self._pool, self.session_id, self._user_id)
 
         # Finalize session row.
         try:
@@ -252,11 +164,11 @@ class SessionRecorder:
                 self._pool,
                 session_id=self.session_id,
                 ended_at=_utcnow(),
-                prompt_tokens=self._totals["prompt_tokens"],
-                completion_tokens=self._totals["completion_tokens"],
-                cache_read_tokens=self._totals["cache_read_tokens"],
-                cache_creation_tokens=self._totals["cache_creation_tokens"],
-                tts_chars=self._totals["tts_chars"],
+                prompt_tokens=self._totals.prompt_tokens,
+                completion_tokens=self._totals.completion_tokens,
+                cache_read_tokens=self._totals.cache_read_tokens,
+                cache_creation_tokens=self._totals.cache_creation_tokens,
+                tts_chars=self._totals.tts_chars,
             )
         except Exception as e:
             logger.exception(f"SessionRecorder finalize failed: {e}")

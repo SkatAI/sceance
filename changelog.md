@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-06-16 — Split recorder queue / totals / memory kickoff (refactor Task 9)
+
+- `SessionRecorder` mixed four concerns. Moved the mechanical ones into a new
+  `recording.py`: `UsageTotals` (a dataclass accumulating token/char totals, with
+  `add_llm` / `add_tts`) and `RecordDrainQueue` (the in-memory queue, background
+  drain loop, and batched flush dispatch). `SessionRecorder` now orchestrates the
+  session-row lifecycle and holds an injectable queue + summary scheduler. The
+  fire-and-forget memory summarization is isolated in `_default_summary_scheduler`
+  and injectable, so `close()` no longer spawns a background task directly. Public
+  interface (`record_*` / `start` / `close` / `session_id`) and `close()`
+  idempotency are unchanged; `UsageTotals` and the queue have direct unit tests,
+  and recorder tests now drive behavior through an injected fake queue/scheduler.
+
 ## 2026-06-16 — Explicit recorder repository methods (refactor Task 8)
 
 - `SessionRecorder` passed arbitrary table names and dict-derived column orders
