@@ -22,11 +22,11 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
+from pydantic import BaseModel
 
 import daily_client
 from auth import CurrentUser, get_current_user, require_admin

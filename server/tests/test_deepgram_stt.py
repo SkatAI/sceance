@@ -12,7 +12,6 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-
 from pipecat.frames.frames import (
     InterimTranscriptionFrame,
     TranscriptionFrame,
@@ -22,11 +21,10 @@ from pipecat.frames.frames import (
 
 from deepgram_stt import (
     StallGuardedDeepgramSTTService,
-    _StallWatchdog,
     _is_auth_error,
     _redact_secrets,
+    _StallWatchdog,
 )
-
 
 # --- _StallWatchdog ---------------------------------------------------------
 

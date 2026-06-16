@@ -7,8 +7,7 @@ from uuid import uuid4
 
 import pytest
 
-from memory import NO_PROFILE, _extract_json, load_memory_brief
-from memory import summarize_and_persist
+from memory import NO_PROFILE, _extract_json, load_memory_brief, summarize_and_persist
 
 
 class FakeConnection:

@@ -4,10 +4,10 @@ import asyncio
 import json
 from uuid import uuid4
 
+from personas import Persona
 from recorder import NullSessionRecorder, SessionRecorder
 from tests.conftest import FakePool
 from tests.test_personas import persona_payload
-from personas import Persona
 
 
 class RecorderConnection:
