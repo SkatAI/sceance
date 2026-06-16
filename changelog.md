@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-16 — Remove unused NullSessionRecorder (refactor Task 10)
+
+- `NullSessionRecorder` (a no-op "record nothing to the DB" recorder) was never
+  used by `run_bot` — memory-off personas use `SessionRecorder(update_memory=False)`,
+  which still records the session for observability and only skips cross-session
+  memory. The no-op mode contradicted the product reality that every session is
+  recorded, so removed the class and its test rather than wiring it in.
+
 ## 2026-06-16 — Split recorder queue / totals / memory kickoff (refactor Task 9)
 
 - `SessionRecorder` mixed four concerns. Moved the mechanical ones into a new

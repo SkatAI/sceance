@@ -5,7 +5,7 @@ import json
 from uuid import uuid4
 
 from personas import Persona
-from recorder import NullSessionRecorder, RecordKind, SessionRecorder
+from recorder import RecordKind, SessionRecorder
 from recording import UsageTotals
 from tests.conftest import FakePool
 from tests.test_personas import persona_payload
@@ -143,15 +143,3 @@ def test_close_skips_summary_when_update_memory_off():
     asyncio.run(recorder.close())
 
     assert scheduled == []
-
-
-def test_null_session_recorder_is_noop():
-    recorder = NullSessionRecorder()
-
-    asyncio.run(recorder.start())
-    recorder.record_message("user", "hello")
-    recorder.record_event("x", 1)
-    recorder.record_metric("p", None, "ttfb", value_num=1.0)
-    asyncio.run(recorder.close())
-
-    assert recorder.session_id is not None
