@@ -53,12 +53,13 @@ uv run uvicorn server:app --host 0.0.0.0 --port 8001 --reload
 **Bot only** (quick local voice test, no web UI/auth) — from `server/`:
 
 ```
-uv run bot.py
+uv run cli_bot.py
 ```
 
 `uv` resolves `.venv` automatically — no `source` step needed. The bot
 listens on a SmallWebRTC transport by default; open the URL it logs to
-talk to it.
+talk to it. (`cli_bot.py` is the local dev runner; production spawns
+`bot.run_daily_bot` from `/start-session`.)
 
 Tests: `make test` (or `cd server && uv run pytest`).
 

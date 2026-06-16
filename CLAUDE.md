@@ -14,7 +14,7 @@ existing format.
 ## Layout
 
 - `server/` — Pipecat backend (Python, `uv`-managed). Currently a near-verbatim copy of the Pipecat quickstart, used as the bootstrap point.
-- `server/bot.py` — single-file bot: STT → LLM → TTS cascade pipeline, supports both Daily and SmallWebRTC transports.
+- `server/bot.py` — production bot: STT → LLM → TTS cascade pipeline + reusable builders; `run_daily_bot` is the `/start-session` entry. `server/cli_bot.py` is the local dev runner (Daily/SmallWebRTC via the Pipecat CLI).
 - `server/pyproject.toml` — deps pinned via `pipecat-ai[cartesia,daily,deepgram,openai,runner,silero,webrtc]`. Note the `onnxruntime==1.23.0` override — required for Intel Macs since later wheels dropped x86_64 support.
 - `server/Dockerfile`, `server/pcc-deploy.toml` — Pipecat Cloud deployment config.
 - No frontend yet — planned: React + Vite using `@pipecat-ai/client-react`.
@@ -44,12 +44,12 @@ Build the LLM and TTS services as swappable from the start.
 From `server/`:
 
 ```
-uv run bot.py
+uv run cli_bot.py
 ```
 
 `uv` resolves `.venv` automatically — no need to activate it. Activating only helps if you want bare `python`/`pytest` in the shell.
 
-Entry point is `pipecat.runner.run.main`, which picks Daily or SmallWebRTC based on CLI args.
+`cli_bot.py` is the local dev entry point: `pipecat.runner.run.main` picks Daily or SmallWebRTC based on CLI args and calls `cli_bot.bot(runner_args)`. Production does not use this path — `/start-session` spawns `bot.run_daily_bot` directly. Keeping the CLI + SmallWebRTC imports in `cli_bot.py` (not `bot.py`) keeps them off the production import path.
 
 ## Secrets
 

@@ -22,10 +22,8 @@ Run the bot using::
 
 
 import asyncio
-import os
 
 import asyncpg
-from dotenv import load_dotenv
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import LLMRunFrame
@@ -37,13 +35,10 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
-from pipecat.runner.types import DailyRunnerArguments, RunnerArguments, SmallWebRTCRunnerArguments
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.tts_service import TextAggregationMode
-from pipecat.transports.base_transport import BaseTransport, TransportParams
+from pipecat.transports.base_transport import BaseTransport
 from pipecat.transports.daily.transport import DailyParams, DailyTransport
-from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
-from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 
 import prompting
 import providers
@@ -53,8 +48,6 @@ from observer import TranscriptObserver
 from personas import Persona, load_persona
 from recorder import SessionRecorder
 from settings import get_settings
-
-load_dotenv(override=True)
 
 # Spoken when STT stalls (no final transcript). Keyed by persona language so a
 # non-English session doesn't break into English on a recovery prompt.
@@ -299,48 +292,3 @@ async def run_daily_bot(
         ),
     )
     await run_bot(transport, agent_name, pool, user_id=user_id)
-
-
-async def bot(runner_args: RunnerArguments):
-    """Main bot entry point."""
-
-    transport = None
-
-    match runner_args:
-        case DailyRunnerArguments():
-            transport = DailyTransport(
-                runner_args.room_url,
-                runner_args.token,
-                "Pipecat Bot",
-                params=DailyParams(
-                    audio_in_enabled=True,
-                    audio_out_enabled=True,
-                ),
-            )
-        case SmallWebRTCRunnerArguments():
-            webrtc_connection: SmallWebRTCConnection = runner_args.webrtc_connection
-
-            transport = SmallWebRTCTransport(
-                webrtc_connection=webrtc_connection,
-                params=TransportParams(
-                    audio_in_enabled=True,
-                    audio_out_enabled=True,
-                ),
-            )
-        case _:
-            logger.error(f"Unsupported runner arguments type: {type(runner_args)}")
-            return
-
-    from storage import close_pool, create_pool
-
-    pool = await create_pool()
-    try:
-        await run_bot(transport, os.getenv("AGENT_NAME", ""), pool)
-    finally:
-        await close_pool(pool)
-
-
-if __name__ == "__main__":
-    from pipecat.runner.run import main
-
-    main()

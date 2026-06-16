@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-06-16 — Isolate the CLI / SmallWebRTC runner (refactor Task 7)
+
+- The Pipecat dev-runner entry point `bot(runner_args)` + the `__main__` block
+  and the SmallWebRTC transport imports lived in `bot.py`, loading the SmallWebRTC
+  stack on the production `/start-session` import path. Moved them into a new
+  `cli_bot.py`; `bot.py` now keeps only production Daily orchestration
+  (`run_daily_bot`) and the reusable builders (293 lines, down from 345). Verified
+  no `smallwebrtc` module loads when importing `bot`. Local dev command is now
+  `uv run cli_bot.py` (readme + CLAUDE.md updated); a smoke test covers the
+  Daily / SmallWebRTC / unsupported dispatch branches.
+
 ## 2026-06-16 — Break up run_bot into named builders (refactor Task 6)
 
 - `run_bot` inlined every construction and wiring step (~135 lines). Split it into
