@@ -1,25 +1,23 @@
 # Refactoring Plan - 2026-06-14
 
-This plan updates the earlier audit in `docs/codex_refactoring_plan.md` after re-reading the current codebase. Some earlier recommendations have already been partly addressed: the frontend dashboard has been split into `auth.js`, `format.js`, `dashboard.js`, and `session.js`, and the server now has focused tests under `server/tests/`.
-
-The remaining issues are mostly backend boundary problems: large modules still mix HTTP, orchestration, persistence, provider construction, and LLM side effects. The tasks below are intentionally granular so a coding agent can take one item, make the change, and verify it without needing to complete the whole plan.
+The issues are mostly backend boundary problems: large modules mix HTTP, orchestration, persistence, provider construction, and LLM side effects. The tasks below are intentionally granular so a coding agent can take one item, make the change, and verify it without needing to complete the whole plan.
 
 ## Current Design Pressure Points
 
-- `server/server.py` is still a god module. It owns app construction, config endpoints, auth login, persona listing, Daily room creation, bot task lifecycle, dashboard SQL, session detail shaping, latency-analysis triggering, and static routing.
-- `server/bot.py` still mixes provider factories, prompt construction, STT/TTS/LLM wiring, memory injection, recorder startup, transport event handlers, Pipecat pipeline assembly, and CLI runner support.
-- `server/recorder.py` still combines session lifecycle, hot-path queueing, batching, generic table persistence, token totals, close semantics, and background memory summarization kickoff.
+- `server/server.py` is a god module. It owns app construction, config endpoints, auth login, persona listing, Daily room creation, bot task lifecycle, dashboard SQL, session detail shaping, latency-analysis triggering, and static routing.
+- `server/bot.py` mixes provider factories, prompt construction, STT/TTS/LLM wiring, memory injection, recorder startup, transport event handlers, Pipecat pipeline assembly, and CLI runner support.
+- `server/recorder.py` combines session lifecycle, hot-path queueing, batching, generic table persistence, token totals, close semantics, and background memory summarization kickoff.
 - Persistence is too implicit. `storage.bulk_insert(pool, table, columns, rows)` plus recorder-supplied table names is flexible, but brittle and harder to test than explicit repository methods.
 - Provider selection uses `if provider == ...` chains in `build_llm` and `build_tts`, so adding a provider edits core orchestration code.
 - `memory.py` and `latency.py` duplicate Anthropic call and JSON extraction patterns.
 - `latency.py` has deterministic collector logic, LLM prompt synthesis, model calls, and DB upsert in one module, and currently appears to have no dedicated tests.
-- `personas.py` is improved from the old audit, but one wide dataclass still carries agent metadata, prompt config, LLM config, TTS config, STT config, and Pipecat tuning fields.
-- `server/static/app.js` still duplicates Supabase boot and token handling that operator pages already centralized in `server/static/auth.js`.
+- `personas.py` is improved from the old audit, but one wide dataclass carries agent metadata, prompt config, LLM config, TTS config, STT config, and Pipecat tuning fields.
+- `server/static/app.js` duplicates Supabase boot and token handling that operator pages already centralized in `server/static/auth.js`.
 - Ruff is configured to check imports only, so many design-preserving cleanup rules are not enforced.
 
 ## Task 1 - Extract Daily Room Client
 
-**Principle:** SRP, DIP, KISS  
+**Principle:** SRP, DIP, KISS
 **Files:** `server/server.py`, new `server/daily_client.py`, `server/tests/test_daily_client.py`
 
 Move `_create_daily_room`, `_create_meeting_token`, `DAILY_API_BASE`, and `ROOM_EXPIRY_SECONDS` into a small `DailyClient` module or plain functions that accept an `httpx.AsyncClient`.
@@ -38,7 +36,7 @@ Acceptance criteria:
 
 ## Task 2 - Split FastAPI Routers From `server.py`
 
-**Principle:** SRP, ISP, KISS  
+**Principle:** SRP, ISP, KISS
 **Files:** `server/server.py`, new `server/routes/*.py`, tests in `server/tests/`
 
 Extract routes into focused modules:
@@ -58,7 +56,7 @@ Acceptance criteria:
 
 ## Task 3 - Add a Small Settings Object
 
-**Principle:** DIP, KISS  
+**Principle:** DIP, KISS
 **Files:** `server/settings.py`, `server/server.py`, `server/auth.py`, `server/recorder.py`, `server/bot.py`
 
 Centralize environment reads that currently happen at import time:
@@ -78,7 +76,7 @@ Acceptance criteria:
 
 ## Task 4 - Replace Provider `if` Chains With Registries
 
-**Principle:** OCP, DRY  
+**Principle:** OCP, DRY
 **Files:** `server/bot.py`, possibly new `server/providers.py`, `server/tests/test_bot_factories.py`
 
 Introduce simple registries for LLM and TTS providers:
@@ -96,7 +94,7 @@ Acceptance criteria:
 
 ## Task 5 - Extract Prompt and Language Policy Builder
 
-**Principle:** SRP, DRY  
+**Principle:** SRP, DRY
 **Files:** `server/bot.py`, new `server/prompting.py`, tests
 
 Move `SHARED_SYSTEM_APPENDIX`, `_LANG_NAMES`, `_language_directive`, and system-instruction assembly out of provider construction.
@@ -109,7 +107,7 @@ Acceptance criteria:
 
 ## Task 6 - Extract Bot Pipeline Assembly
 
-**Principle:** SRP, KISS  
+**Principle:** SRP, KISS
 **Files:** `server/bot.py`, maybe `server/pipeline.py`, `server/tests/test_bot_factories.py`
 
 Break `run_bot` into small functions:
@@ -131,7 +129,7 @@ Acceptance criteria:
 
 ## Task 7 - Isolate CLI / SmallWebRTC Runner Code
 
-**Principle:** YAGNI, SRP  
+**Principle:** YAGNI, SRP
 **Files:** `server/bot.py`, new `server/bot_runner.py` or `server/cli_bot.py`
 
 The production web path uses `run_daily_bot`; the Pipecat CLI entrypoint and `SmallWebRTCRunnerArguments` support add forward-compatibility weight to the core bot module.
@@ -146,7 +144,7 @@ Acceptance criteria:
 
 ## Task 8 - Create Explicit Recorder Repository Methods
 
-**Principle:** SRP, KISS, DIP  
+**Principle:** SRP, KISS, DIP
 **Files:** `server/storage.py`, `server/recorder.py`, `server/tests/test_storage.py`, `server/tests/test_recorder.py`
 
 Replace generic recorder persistence calls with explicit methods:
@@ -167,7 +165,7 @@ Acceptance criteria:
 
 ## Task 9 - Separate Recorder Queue, Totals, and Memory Summary Kickoff
 
-**Principle:** SRP, ISP  
+**Principle:** SRP, ISP
 **Files:** `server/recorder.py`, possible `server/recording.py`, tests
 
 Split responsibilities currently held by `SessionRecorder`:
@@ -187,7 +185,7 @@ Acceptance criteria:
 
 ## Task 10 - Remove or Justify `NullSessionRecorder`
 
-**Principle:** YAGNI, KISS  
+**Principle:** YAGNI, KISS
 **Files:** `server/recorder.py`, tests
 
 `NullSessionRecorder` is currently not used by `run_bot`; memory-off personas still use `SessionRecorder(update_memory=False)`. Either remove `NullSessionRecorder` and its tests, or wire it intentionally for a concrete mode such as no-observability local runs.
@@ -199,7 +197,7 @@ Acceptance criteria:
 
 ## Task 11 - Share Anthropic JSON Synthesis Utilities
 
-**Principle:** DRY, SRP  
+**Principle:** DRY, SRP
 **Files:** `server/memory.py`, `server/latency.py`, new `server/llm_json.py`, tests
 
 Both memory summarization and latency analysis create an Anthropic client, run a blocking call via `asyncio.to_thread`, concatenate text blocks, and extract JSON with fence/prose tolerance.
@@ -217,7 +215,7 @@ Acceptance criteria:
 
 ## Task 12 - Split Latency Collector, Synthesis, and Storage
 
-**Principle:** SRP, KISS  
+**Principle:** SRP, KISS
 **Files:** `server/latency.py`, new `server/latency_collector.py`, `server/latency_report.py`, `server/latency_repository.py`, tests
 
 Keep deterministic analysis separate from model-based synthesis and DB upsert.
@@ -237,7 +235,7 @@ Acceptance criteria:
 
 ## Task 13 - Extract Dashboard Query Repository
 
-**Principle:** SRP, DRY  
+**Principle:** SRP, DRY
 **Files:** `server/server.py`, new `server/dashboard_repository.py`, tests
 
 Move SQL and row-to-JSON mapping for aggregate, session list, and session detail out of route functions.
@@ -251,7 +249,7 @@ Acceptance criteria:
 
 ## Task 14 - Normalize Session Detail Persona Projection
 
-**Principle:** SRP, KISS  
+**Principle:** SRP, KISS
 **Files:** `server/server.py` or new presenter module, tests
 
 `api_session_detail` currently loads `persona_json`, conditionally parses JSON, tries `Persona.from_dict`, falls back to legacy dicts, and builds a persona view inline.
@@ -265,7 +263,7 @@ Acceptance criteria:
 
 ## Task 15 - Consolidate Browser Auth Boot
 
-**Principle:** DRY, SRP  
+**Principle:** DRY, SRP
 **Files:** `server/static/app.js`, `server/static/auth.js`
 
 Operator pages use `auth.js`, but the landing page still hand-rolls Supabase config loading, client creation, session lookup, `/api/me`, and auth-state handling.
@@ -287,7 +285,7 @@ Acceptance criteria:
 
 ## Task 16 - Convert Large Frontend Render Strings Into Smaller Renderers
 
-**Principle:** KISS, SRP  
+**Principle:** KISS, SRP
 **Files:** `server/static/format.js`, `server/static/dashboard.js`
 
 `format.js` is now a mixed formatter and session-detail renderer. Keep the split lightweight:
@@ -304,7 +302,7 @@ Acceptance criteria:
 
 ## Task 17 - Tighten Persona Model Boundaries
 
-**Principle:** ISP, SRP  
+**Principle:** ISP, SRP
 **Files:** `server/personas.py`, tests
 
 The nested JSON schema is good, but `Persona` is still one wide dataclass with provider-specific and UI-specific fields. Introduce nested dataclasses only if it reduces call-site complexity:
@@ -327,7 +325,7 @@ Acceptance criteria:
 
 ## Task 18 - Raise Tooling Coverage Gradually
 
-**Principle:** KISS, correctness feedback  
+**Principle:** KISS, correctness feedback
 **Files:** `server/pyproject.toml`, source files, tests
 
 Ruff currently selects only import sorting (`select = ["I"]`). Expand linting in a controlled way after structural refactors land.
@@ -344,7 +342,7 @@ Acceptance criteria:
 
 ## Task 19 - Add Integration Smoke Tests for Route Wiring
 
-**Principle:** regression safety  
+**Principle:** regression safety
 **Files:** `server/tests/`, possibly `server/tests/test_routes.py`
 
 Once routers and repositories are split, add a small set of FastAPI-level smoke tests with dependency overrides/fake pool:
@@ -362,7 +360,7 @@ Acceptance criteria:
 
 ## Task 20 - Document Runtime Entry Points
 
-**Principle:** KISS, YAGNI  
+**Principle:** KISS, YAGNI
 **Files:** `readme.md`, `server/bot.py`, optional runner module
 
 After splitting production and CLI bot paths, document the supported entry points:
