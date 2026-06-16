@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-06-16 — Split FastAPI routers out of server.py (refactor Task 2)
+
+- `server.py` (541 lines) was a god module owning every route handler, dashboard
+  SQL, and shared state. Split the handlers into focused `routes/` modules —
+  `public` (config/health/agents/landing redirects), `auth` (login + `/api/me`),
+  `sessions` (`/start-session`), `admin` (aggregate/sessions/detail/latency) —
+  leaving `server.py` (now 62 lines) responsible only for lifespan, CORS, router
+  registration, and the static mount. No route behavior, SQL, or response shapes
+  changed. Three supporting modules were introduced: `config.py` (shared env/path
+  constants, a minimal precursor to the Task 3 settings object), `deps.py`
+  (`get_pool` request dependency so handlers stay directly unit-testable), and
+  `session_tasks.py` (the active-bot-task registry shared by `/health`,
+  `/start-session`, and lifespan). Route tests were re-homed per module
+  (`test_{public,auth,session,admin}_routes.py`), replacing `test_server_helpers.py`.
+
 ## 2026-06-16 — Extract Daily room client from server.py (refactor)
 
 - First step of the `docs/refactoring_plan_2026-06-14.md` decomposition (Task 1).
