@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-06-16 — Explicit recorder repository methods (refactor Task 8)
+
+- `SessionRecorder` passed arbitrary table names and dict-derived column orders
+  into `storage.bulk_insert`, and inlined the session INSERT/UPDATE SQL. Added a
+  session repository to `storage.py`: `insert_messages` / `insert_events` /
+  `insert_metrics` (each owns its table name + a fixed `*_COLUMNS` order),
+  `insert_session`, and `finalize_session`. The recorder's queue now carries a
+  `RecordKind` enum instead of raw table strings, and `_flush` dispatches by kind
+  to the matching repository method — the recorder no longer names a table or
+  builds a column list anywhere. `bulk_insert` stays as the low-level primitive
+  the inserters wrap. Each repository method has a fixed-column-order test.
+
 ## 2026-06-16 — Isolate the CLI / SmallWebRTC runner (refactor Task 7)
 
 - The Pipecat dev-runner entry point `bot(runner_args)` + the `__main__` block

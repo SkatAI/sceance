@@ -5,7 +5,7 @@ import json
 from uuid import uuid4
 
 from personas import Persona
-from recorder import NullSessionRecorder, SessionRecorder
+from recorder import NullSessionRecorder, RecordKind, SessionRecorder
 from tests.conftest import FakePool
 from tests.test_personas import persona_payload
 
@@ -43,10 +43,10 @@ def test_record_methods_enqueue_expected_rows_and_totals():
 
     queued = [recorder._queue.get_nowait() for _ in range(4)]
 
-    assert queued[0][0] == "messages"
+    assert queued[0][0] == RecordKind.MESSAGE
     assert queued[0][1]["role"] == "user"
     assert queued[1] == (
-        "events",
+        RecordKind.EVENT,
         {
             "session_id": recorder.session_id,
             "kind": "joined",
@@ -63,28 +63,34 @@ def test_record_methods_enqueue_expected_rows_and_totals():
     }
 
 
-def test_flush_groups_rows_by_table_and_preserves_columns(monkeypatch):
+def test_flush_dispatches_rows_to_repository_by_kind(monkeypatch):
     calls = []
 
-    async def fake_bulk_insert(pool, table, columns, rows):
-        calls.append((table, columns, rows))
+    async def fake_insert_messages(pool, rows):
+        calls.append(("messages", list(rows)))
 
-    monkeypatch.setattr("recorder.bulk_insert", fake_bulk_insert)
+    async def fake_insert_events(pool, rows):
+        calls.append(("events", list(rows)))
+
+    monkeypatch.setattr("recorder.insert_messages", fake_insert_messages)
+    monkeypatch.setattr("recorder.insert_events", fake_insert_events)
     recorder = SessionRecorder(FakePool(RecorderConnection()), make_persona())
 
     asyncio.run(
         recorder._flush(
             [
-                ("messages", {"a": 1, "b": 2}),
-                ("events", {"kind": "x", "timestamp_ns": 3}),
-                ("messages", {"a": 4, "b": 5}),
+                (RecordKind.MESSAGE, {"a": 1, "b": 2}),
+                (RecordKind.EVENT, {"kind": "x", "timestamp_ns": 3}),
+                (RecordKind.MESSAGE, {"a": 4, "b": 5}),
             ]
         )
     )
 
+    # Rows are grouped by kind and routed to the matching repository method;
+    # the recorder never names a table or builds a column list itself.
     assert calls == [
-        ("messages", ["a", "b"], [[1, 2], [4, 5]]),
-        ("events", ["kind", "timestamp_ns"], [["x", 3]]),
+        ("messages", [{"a": 1, "b": 2}, {"a": 4, "b": 5}]),
+        ("events", [{"kind": "x", "timestamp_ns": 3}]),
     ]
 
 
@@ -97,10 +103,10 @@ def test_start_inserts_session_row_and_close_finalizes_without_user_summary(monk
         recorder.record_metric("LLM", "m", "llm_usage", prompt_tokens=2, completion_tokens=3)
         await recorder.close()
 
-    async def fake_bulk_insert(*args, **kwargs):
+    async def fake_insert_metrics(*args, **kwargs):
         return None
 
-    monkeypatch.setattr("recorder.bulk_insert", fake_bulk_insert)
+    monkeypatch.setattr("recorder.insert_metrics", fake_insert_metrics)
 
     asyncio.run(run_session())
 
