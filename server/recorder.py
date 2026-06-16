@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -22,17 +21,12 @@ from loguru import logger
 
 from memory import summarize_and_persist
 from personas import Persona
+from settings import get_settings
 from storage import bulk_insert
 
 BATCH_MAX = 50
 BATCH_INTERVAL_S = 1.0
 QUEUE_MAX = 10_000
-
-# Where the server is running: 'local' (dev, set in .env) or 'online' (set in
-# the deployed Pipecat Cloud secret set). Recorded on each session row so
-# dev/test sessions can be told apart from real ones. Falls back to 'unknown'
-# when DEPLOY_ENV is unset rather than assuming a location.
-DEPLOY_ENV = os.getenv("DEPLOY_ENV", "unknown").strip().lower() or "unknown"
 
 
 def _utcnow() -> datetime:
@@ -82,7 +76,9 @@ class SessionRecorder:
                 self._persona.lang,
                 _utcnow(),
                 self._user_id,
-                DEPLOY_ENV,
+                # 'local' (dev) / 'online' (deployed) / 'unknown'; lets dev/test
+                # sessions be told apart from real ones on the session row.
+                get_settings().deploy_env,
             )
         self._drain_task = asyncio.create_task(self._drain_loop())
         logger.info(f"SessionRecorder started for session {self.session_id}")

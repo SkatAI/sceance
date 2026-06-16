@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-06-16 — Centralize env reads in a Settings object (refactor Task 3)
+
+- Environment configuration was scattered as import-time module globals across
+  `config.py` (Daily/session/signup), `auth.py` (SUPABASE_URL, JWT secret, derived
+  JWKS url), `supabase_admin.py` (SUPABASE_URL, service-role key, derived auth
+  base), and `recorder.py` (DEPLOY_ENV), each monkeypatched individually in tests.
+  Replaced with a single `settings.py` `Settings` dataclass read via
+  `get_settings()` at call time (`config.py` removed). Env var names and parsing
+  are unchanged. The Supabase/DB reads in `storage.create_pool` and the public
+  `/api/config` endpoint now come from settings too. Tests override one object —
+  `monkeypatch.setattr(get_settings(), "<field>", …)` — instead of patching many
+  module globals, with an autouse conftest fixture resetting the singleton between
+  tests. Provider API keys (bot/memory/latency factories) are intentionally left
+  for the Task 4/11 factory refactor.
+
 ## 2026-06-16 — Split FastAPI routers out of server.py (refactor Task 2)
 
 - `server.py` (541 lines) was a god module owning every route handler, dashboard

@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 import auth
 from auth import CurrentUser, get_current_user, require_admin
+from settings import get_settings
 from tests.conftest import FakePool
 
 
@@ -27,7 +28,7 @@ def request_with_pool(pool):
 
 def test_verify_jwt_uses_legacy_secret_when_jwks_unavailable(monkeypatch):
     monkeypatch.setattr(auth, "_get_jwks_client", lambda: None)
-    monkeypatch.setattr(auth, "SUPABASE_JWT_SECRET", "secret")
+    monkeypatch.setattr(get_settings(), "supabase_jwt_secret", "secret")
     monkeypatch.setattr(auth.jwt, "decode", lambda token, key, algorithms, audience: {"sub": "u1"})
 
     assert auth.verify_jwt("token") == {"sub": "u1"}
@@ -35,7 +36,7 @@ def test_verify_jwt_uses_legacy_secret_when_jwks_unavailable(monkeypatch):
 
 def test_verify_jwt_turns_decode_errors_into_401(monkeypatch):
     monkeypatch.setattr(auth, "_get_jwks_client", lambda: None)
-    monkeypatch.setattr(auth, "SUPABASE_JWT_SECRET", "secret")
+    monkeypatch.setattr(get_settings(), "supabase_jwt_secret", "secret")
 
     def fail(*args, **kwargs):
         raise auth.jwt.InvalidTokenError("bad")

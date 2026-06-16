@@ -9,12 +9,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 from pydantic import BaseModel
 
-import config
 import daily_client
 import session_tasks
 from auth import CurrentUser, get_current_user
 from bot import run_daily_bot
 from deps import get_pool
+from settings import get_settings
 
 router = APIRouter()
 
@@ -29,18 +29,19 @@ async def start_session(
     pool=Depends(get_pool),
     user: CurrentUser = Depends(get_current_user),
 ):
+    settings = get_settings()
     agent_name = (body.agent or "").strip()
     if not agent_name:
         raise HTTPException(status_code=400, detail="agent_required")
-    persona_path = config.PERSONAS_DIR / f"{agent_name}.json"
+    persona_path = settings.personas_dir / f"{agent_name}.json"
     if not persona_path.exists():
         raise HTTPException(status_code=404, detail="agent_not_found")
-    if session_tasks.count() >= config.MAX_SESSIONS:
+    if session_tasks.count() >= settings.max_sessions:
         raise HTTPException(status_code=429, detail="agent_busy")
-    if not config.DAILY_API_KEY:
+    if not settings.daily_api_key:
         raise HTTPException(status_code=500, detail="daily_api_key_missing")
 
-    async with daily_client.make_client(config.DAILY_API_KEY) as client:
+    async with daily_client.make_client(settings.daily_api_key) as client:
         try:
             room = await daily_client.create_room(client)
             room_name = room["name"]

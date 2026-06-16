@@ -7,16 +7,16 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-import config
 import session_tasks
 from auth import CurrentUser
 from routes import sessions
+from settings import get_settings
 from tests.fakes import FakeDailyClient
 from tests.test_personas import persona_payload
 
 
 def test_start_session_rejects_missing_and_unknown_agent(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "PERSONAS_DIR", tmp_path)
+    monkeypatch.setattr(get_settings(), "personas_dir", tmp_path)
     user = CurrentUser(id=str(uuid4()), email="a@example.com", username="a", is_admin=False)
 
     with pytest.raises(HTTPException) as missing:
@@ -32,16 +32,16 @@ def test_start_session_rejects_missing_and_unknown_agent(tmp_path, monkeypatch):
 
 def test_start_session_rejects_busy_and_missing_daily_key(tmp_path, monkeypatch):
     (tmp_path / "agent.json").write_text(json.dumps(persona_payload()), encoding="utf-8")
-    monkeypatch.setattr(config, "PERSONAS_DIR", tmp_path)
+    monkeypatch.setattr(get_settings(), "personas_dir", tmp_path)
     user = CurrentUser(id=str(uuid4()), email="a@example.com", username="a", is_admin=False)
 
-    monkeypatch.setattr(config, "MAX_SESSIONS", 0)
+    monkeypatch.setattr(get_settings(), "max_sessions", 0)
     with pytest.raises(HTTPException) as busy:
         asyncio.run(sessions.start_session(sessions.StartSessionBody(agent="agent"), None, user))
     assert busy.value.status_code == 429
 
-    monkeypatch.setattr(config, "MAX_SESSIONS", 5)
-    monkeypatch.setattr(config, "DAILY_API_KEY", "")
+    monkeypatch.setattr(get_settings(), "max_sessions", 5)
+    monkeypatch.setattr(get_settings(), "daily_api_key", "")
     with pytest.raises(HTTPException) as missing_key:
         asyncio.run(sessions.start_session(sessions.StartSessionBody(agent="agent"), None, user))
     assert missing_key.value.status_code == 500
@@ -50,9 +50,9 @@ def test_start_session_rejects_busy_and_missing_daily_key(tmp_path, monkeypatch)
 
 def test_start_session_creates_daily_room_tokens_and_spawns_bot(tmp_path, monkeypatch):
     (tmp_path / "agent.json").write_text(json.dumps(persona_payload()), encoding="utf-8")
-    monkeypatch.setattr(config, "PERSONAS_DIR", tmp_path)
-    monkeypatch.setattr(config, "DAILY_API_KEY", "daily-key")
-    monkeypatch.setattr(config, "MAX_SESSIONS", 5)
+    monkeypatch.setattr(get_settings(), "personas_dir", tmp_path)
+    monkeypatch.setattr(get_settings(), "daily_api_key", "daily-key")
+    monkeypatch.setattr(get_settings(), "max_sessions", 5)
     session_tasks._active_sessions.clear()
     spawned = []
     created_tasks = []

@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 
-import config
 from routes import public
+from settings import get_settings
 from tests.test_personas import persona_payload
 
 
@@ -15,7 +15,7 @@ def test_list_agents_returns_only_active_valid_personas(tmp_path, monkeypatch):
     (tmp_path / "active.json").write_text(json.dumps(active), encoding="utf-8")
     (tmp_path / "inactive.json").write_text(json.dumps(inactive), encoding="utf-8")
     (tmp_path / "broken.json").write_text("{bad json", encoding="utf-8")
-    monkeypatch.setattr(config, "PERSONAS_DIR", tmp_path)
+    monkeypatch.setattr(get_settings(), "personas_dir", tmp_path)
 
     result = asyncio.run(public.list_agents())
 

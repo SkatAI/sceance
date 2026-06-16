@@ -17,17 +17,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
-import config
 import session_tasks
 from routes import admin, auth, public, sessions
+from settings import get_settings
 from storage import close_pool, create_pool
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if not config.DAILY_API_KEY:
+    settings = get_settings()
+    if not settings.daily_api_key:
         logger.warning("DAILY_API_KEY is not set — /start-session will fail")
-    logger.info(f"Static dir: {config.STATIC_DIR}, MAX_SESSIONS={config.MAX_SESSIONS}")
+    logger.info(f"Static dir: {settings.static_dir}, MAX_SESSIONS={settings.max_sessions}")
     app.state.db_pool = await create_pool()
     try:
         yield
@@ -58,5 +59,6 @@ app.include_router(sessions.router)
 app.include_router(admin.router)
 
 # Mount static last so the API routes above take precedence.
-if config.STATIC_DIR.exists():
-    app.mount("/", StaticFiles(directory=str(config.STATIC_DIR), html=True), name="static")
+_static_dir = get_settings().static_dir
+if _static_dir.exists():
+    app.mount("/", StaticFiles(directory=str(_static_dir), html=True), name="static")

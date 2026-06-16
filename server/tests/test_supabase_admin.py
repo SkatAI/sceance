@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 
 import supabase_admin
+from settings import get_settings
 from tests.conftest import FakePool
 
 
@@ -40,11 +41,11 @@ class FakeClient:
 
 
 def test_admin_configured_reflects_auth_base_and_key(monkeypatch):
-    monkeypatch.setattr(supabase_admin, "_AUTH_BASE", "https://example.test/auth/v1")
-    monkeypatch.setattr(supabase_admin, "_SERVICE_ROLE_KEY", "service")
+    monkeypatch.setattr(get_settings(), "supabase_url", "https://example.test")
+    monkeypatch.setattr(get_settings(), "supabase_service_role_key", "service")
     assert supabase_admin.admin_configured() is True
 
-    monkeypatch.setattr(supabase_admin, "_SERVICE_ROLE_KEY", "")
+    monkeypatch.setattr(get_settings(), "supabase_service_role_key", "")
     assert supabase_admin.admin_configured() is False
 
 
@@ -61,8 +62,8 @@ def test_user_exists_returns_false_when_no_row():
 
 
 def test_create_user_posts_preconfirmed_user(monkeypatch):
-    monkeypatch.setattr(supabase_admin, "_AUTH_BASE", "https://example.test/auth/v1")
-    monkeypatch.setattr(supabase_admin, "_SERVICE_ROLE_KEY", "service")
+    monkeypatch.setattr(get_settings(), "supabase_url", "https://example.test")
+    monkeypatch.setattr(get_settings(), "supabase_service_role_key", "service")
     client = FakeClient(FakeResponse())
 
     asyncio.run(supabase_admin.create_user(client, "a@example.com"))
@@ -82,7 +83,7 @@ def test_create_user_raises_on_admin_failure():
 
 
 def test_generate_magiclink_token_accepts_top_level_and_nested_tokens(monkeypatch):
-    monkeypatch.setattr(supabase_admin, "_AUTH_BASE", "https://example.test/auth/v1")
+    monkeypatch.setattr(get_settings(), "supabase_url", "https://example.test")
 
     top = asyncio.run(
         supabase_admin.generate_magiclink_token(

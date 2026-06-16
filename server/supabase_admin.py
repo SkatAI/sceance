@@ -22,26 +22,28 @@ must never be exposed to the browser — it lives only here, server-side.
 
 from __future__ import annotations
 
-import os
-
 import asyncpg
 import httpx
 from fastapi import HTTPException
 from loguru import logger
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-_AUTH_BASE = f"{SUPABASE_URL}/auth/v1" if SUPABASE_URL else ""
+from settings import get_settings
+
+
+def _auth_base() -> str:
+    url = get_settings().supabase_url
+    return f"{url}/auth/v1" if url else ""
 
 
 def admin_configured() -> bool:
-    return bool(_AUTH_BASE and _SERVICE_ROLE_KEY)
+    return bool(_auth_base() and get_settings().supabase_service_role_key)
 
 
 def _admin_headers() -> dict[str, str]:
+    key = get_settings().supabase_service_role_key
     return {
-        "apikey": _SERVICE_ROLE_KEY,
-        "Authorization": f"Bearer {_SERVICE_ROLE_KEY}",
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
 
@@ -63,7 +65,7 @@ async def create_user(client: httpx.AsyncClient, email: str) -> None:
     fills in a username from the email local-part automatically.
     """
     r = await client.post(
-        f"{_AUTH_BASE}/admin/users",
+        f"{_auth_base()}/admin/users",
         headers=_admin_headers(),
         json={"email": email, "email_confirm": True},
     )
@@ -80,7 +82,7 @@ async def generate_magiclink_token(client: httpx.AsyncClient, email: str) -> str
     check both.
     """
     r = await client.post(
-        f"{_AUTH_BASE}/admin/generate_link",
+        f"{_auth_base()}/admin/generate_link",
         headers=_admin_headers(),
         json={"type": "magiclink", "email": email},
     )

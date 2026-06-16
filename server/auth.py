@@ -11,7 +11,6 @@ restart the process if you ever need to force a refresh.
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 import httpx
@@ -20,9 +19,8 @@ from fastapi import Depends, Header, HTTPException, Request
 from jwt import PyJWKClient
 from loguru import logger
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip()
-_JWKS_URL = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json" if SUPABASE_URL else ""
+from settings import get_settings
+
 _AUDIENCE = "authenticated"
 
 _jwks_client: PyJWKClient | None = None
@@ -34,17 +32,19 @@ def _get_jwks_client() -> PyJWKClient | None:
     global _jwks_client
     if _jwks_client is not None:
         return _jwks_client
-    if not _JWKS_URL:
+    supabase_url = get_settings().supabase_url
+    jwks_url = f"{supabase_url}/auth/v1/.well-known/jwks.json" if supabase_url else ""
+    if not jwks_url:
         return None
     try:
-        r = httpx.get(_JWKS_URL, timeout=5.0)
+        r = httpx.get(jwks_url, timeout=5.0)
         r.raise_for_status()
         if not r.json().get("keys"):
             return None
     except httpx.HTTPError as e:
-        logger.warning(f"Could not fetch Supabase JWKS at {_JWKS_URL}: {e}")
+        logger.warning(f"Could not fetch Supabase JWKS at {jwks_url}: {e}")
         return None
-    _jwks_client = PyJWKClient(_JWKS_URL, cache_keys=True)
+    _jwks_client = PyJWKClient(jwks_url, cache_keys=True)
     return _jwks_client
 
 
@@ -60,11 +60,12 @@ def verify_jwt(token: str) -> dict:
                 algorithms=["RS256", "ES256"],
                 audience=_AUDIENCE,
             )
-        if not SUPABASE_JWT_SECRET:
+        jwt_secret = get_settings().supabase_jwt_secret
+        if not jwt_secret:
             raise RuntimeError("no JWKS available and SUPABASE_JWT_SECRET unset")
         return jwt.decode(
             token,
-            SUPABASE_JWT_SECRET,
+            jwt_secret,
             algorithms=["HS256"],
             audience=_AUDIENCE,
         )

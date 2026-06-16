@@ -10,9 +10,9 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-import config
 from auth import CurrentUser, get_current_user
 from deps import get_pool
+from settings import get_settings
 from supabase_admin import (
     admin_configured,
     create_user,
@@ -43,7 +43,7 @@ async def api_auth_login(body: LoginBody, pool=Depends(get_pool)):
     exists = await user_exists(pool, email)
     async with httpx.AsyncClient(timeout=15.0) as client:
         if not exists:
-            if not config.OPEN_SIGNUP:
+            if not get_settings().open_signup:
                 raise HTTPException(status_code=403, detail="invite_only")
             await create_user(client, email)
         token_hash = await generate_magiclink_token(client, email)
