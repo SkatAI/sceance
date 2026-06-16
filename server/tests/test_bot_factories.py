@@ -49,12 +49,6 @@ def make_persona(**changes):
     return Persona.from_dict(raw, id="agent")
 
 
-def test_language_directive_maps_known_and_unknown_languages():
-    assert "Always speak English" in bot._language_directive("en-US")
-    assert "Always speak French" in bot._language_directive("fr")
-    assert "Always speak English" in bot._language_directive("es")
-
-
 def test_stt_recovery_message_localizes_by_language():
     # The STT stall watchdog speaks this; it must match the persona language so a
     # French session doesn't break into English on a recovery prompt.

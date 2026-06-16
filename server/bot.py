@@ -45,6 +45,7 @@ from pipecat.transports.daily.transport import DailyParams, DailyTransport
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 
+import prompting
 import providers
 from deepgram_stt import StallGuardedDeepgramSTTService
 from memory import load_memory_brief
@@ -54,40 +55,6 @@ from recorder import SessionRecorder
 from settings import get_settings
 
 load_dotenv(override=True)
-
-SHARED_SYSTEM_APPENDIX = """
-
-— Memory & onboarding —
-You will receive a memory brief at the start of each conversation, wrapped in a
-"[Memory brief — internal context, do not read aloud or quote]" block.
-- If the brief says no prior conversations exist, this is the first time you
-  meet this user. Get their name when it feels natural — once, gently, and
-  only the name. Do not ask for age, gender, family, or work; let those
-  surface on their own as the user chooses to share.
-- If the brief contains a profile and recent sessions, treat the user as
-  someone you know. Don't recite their facts back at them; just speak like
-  someone who remembers.
-- Never read the memory brief aloud, paraphrase it verbatim, or quote it.
-"""
-
-# Map persona `lang` codes to language names for the output-language directive.
-_LANG_NAMES = {"en": "English", "fr": "French"}
-
-
-def _language_directive(lang: str) -> str:
-    """Pin the persona's spoken language so prior-session memory (which may be in
-    another language) or a user speaking something else can't flip it. `lang`
-    only steered STT/TTS before; the LLM had no language instruction at all."""
-    name = _LANG_NAMES.get(lang.split("-")[0].lower(), "English")
-    return (
-        f"\n\n— Language —\n"
-        f"Always speak {name}. Every response must be in {name}, regardless of the "
-        f"language of the memory brief, earlier context, or anything the user says. "
-        f"The memory brief is internal notes that may be in another language — never "
-        f"mirror its language. If the user speaks another language, gently continue "
-        f"in {name}."
-    )
-
 
 # Spoken when STT stalls (no final transcript). Keyed by persona language so a
 # non-English session doesn't break into English on a recovery prompt.
@@ -104,14 +71,9 @@ def _stt_recovery_message(lang: str) -> str:
 
 
 def build_llm(persona: Persona):
-    """Assemble the shared system instruction, then dispatch to the LLM provider
-    factory registered for `persona.llm_provider` (`openai`/`anthropic`/`groq`)."""
-    lang = (persona.lang or "en").lower()
-    system_instruction = (
-        persona.system_prompt
-        + SHARED_SYSTEM_APPENDIX
-        + _language_directive(lang)
-    )
+    """Select and build the LLM service for the persona's provider. Prompt policy
+    (system instruction + language directive) is assembled in `prompting`."""
+    system_instruction = prompting.build_system_instruction(persona)
     factory = providers.LLM_FACTORIES.get(persona.llm_provider)
     if factory is None:
         raise ValueError(f"Unknown LLM provider in persona: {persona.llm_provider!r}")

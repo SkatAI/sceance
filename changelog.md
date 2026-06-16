@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-06-16 — Extract prompt/language policy (refactor Task 5)
+
+- The shared system-prompt appendix and the output-language directive lived in
+  `bot.py` and were stitched together inside `build_llm`, mixing prompt policy
+  with provider selection. Moved `SHARED_SYSTEM_APPENDIX`, `_LANG_NAMES`,
+  `_language_directive`, and the assembly into a new `prompting.py` behind
+  `build_system_instruction(persona)`; `build_llm` now just calls it and selects
+  the provider. Prompt policy is unit-tested independently (English, French,
+  unknown-language fallback, memory-appendix inclusion) in `test_prompting.py`.
+  The STT stall recovery messages stay in `bot.py` for now (they belong with the
+  Task 6 STT extraction). `bot.py` 357 → 319 lines.
+
 ## 2026-06-16 — Provider factory registries (refactor Task 4)
 
 - `bot.build_llm` / `bot.build_tts` were `if provider == …` chains that read each
