@@ -117,25 +117,19 @@ def build_tts(persona: Persona):
     return factory(persona, lang, agg_mode)
 
 
-async def run_bot(
-    transport: BaseTransport,
-    agent_name: str,
-    pool: asyncpg.Pool,
-    user_id: str | None = None,
-):
-    """Main bot logic."""
-    persona = load_persona(agent_name)
-    logger.info(f"Starting bot with persona: {persona.name}")
+def build_stt(persona: Persona):
+    """Deepgram STT with a stall watchdog. Model defaults to nova-3 for English
+    (nova-3 is English-only) and nova-2 otherwise; an explicit `persona.stt_model`
+    wins.
 
-    # Speech-to-Text service — pick a model that supports the persona language.
-    # nova-3 is English-only; for non-English use nova-2 (override via stt.model).
+    StallGuardedDeepgramSTTService adds a watchdog on top of the base service: if
+    a turn ends with no final transcript (a silently half-open Deepgram socket —
+    the failure pipecat does NOT auto-recover; see deepgram_stt.py), it forces a
+    reconnect so the next turn lands on a healthy connection and speaks
+    `recovery_message` so the dead air is audible.
+    """
     lang = (persona.lang or "en").lower()
     stt_model = persona.stt_model or ("nova-3" if lang.startswith("en") else "nova-2")
-    # StallGuardedDeepgramSTTService adds a watchdog on top of the base service:
-    # if a turn ends with no final transcript (a silently half-open Deepgram
-    # socket — the failure pipecat does NOT auto-recover; see deepgram_stt.py),
-    # it forces a reconnect so the next turn lands on a healthy connection and
-    # speaks `recovery_message` so the dead air is audible.
     stt = StallGuardedDeepgramSTTService(
         api_key=get_settings().deepgram_api_key,
         settings=DeepgramSTTService.Settings(
@@ -146,33 +140,22 @@ async def run_bot(
         recovery_message=_stt_recovery_message(lang),
     )
     logger.info(f"STT: {persona.stt_provider} model={stt_model} language={lang}")
-
-    # Text-to-Speech service (provider routed from persona.tts_provider)
-    tts = build_tts(persona)
-    logger.info(f"TTS: {persona.tts_provider} voice={persona.voice_id} language={lang}")
+    return stt
 
 
-    # LLM service (provider routed from persona.llm_provider)
-    llm = build_llm(persona)
-    logger.info(f"LLM: {persona.llm_provider}:{persona.llm_model}")
-
-    # Warm the LLM connection now, while the caller is still connecting, so the
-    # intro turn isn't the cold first request. Fire-and-forget; keep a reference
-    # so the task isn't garbage-collected mid-flight.
-    prewarm_task = asyncio.create_task(prewarm_llm(llm))
-
-
-
+def build_context_aggregators():
+    """LLM context plus its user/assistant aggregator pair (VAD on the user side)."""
     context = LLMContext()
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
-        user_params=LLMUserAggregatorParams(
-            vad_analyzer=SileroVADAnalyzer(),    ),
+        user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
     )
+    return context, user_aggregator, assistant_aggregator
 
 
-    # Pipeline - assembled from reusable components
-    pipeline = Pipeline([
+def build_pipeline(transport, stt, llm, tts, user_aggregator, assistant_aggregator):
+    """Assemble the cascade pipeline from its reusable components."""
+    return Pipeline([
         transport.input(),
         stt,
         user_aggregator,
@@ -183,38 +166,35 @@ async def run_bot(
     ])
 
 
-    # Recording (session row, transcript, metrics) is always on for
-    # observability. Cross-session memory is decoupled: persona.memory == False
-    # → blank slate, so we neither retrieve a past-session brief nor write user
-    # memory at close (update_memory=False), but the session is still recorded.
-    recorder = SessionRecorder(pool, persona, user_id=user_id, update_memory=persona.memory)
-    await recorder.start()
-    logger.info(f"Recording session {recorder.session_id} to Supabase")
-    if persona.memory:
-        memory_brief = await load_memory_brief(pool, user_id)
-        if memory_brief:
-            logger.info(f"Loaded memory brief ({len(memory_brief)} chars) for user {user_id}")
-    else:
-        memory_brief = None
+def create_recorder(pool: asyncpg.Pool, persona: Persona, user_id: str | None):
+    """Session recorder. Recording (session row, transcript, metrics) is always on
+    for observability; cross-session memory is decoupled — persona.memory == False
+    means blank slate, so `update_memory=False` skips writing user memory at close
+    while the session is still recorded."""
+    return SessionRecorder(pool, persona, user_id=user_id, update_memory=persona.memory)
+
+
+async def _load_memory_brief(pool, persona: Persona, user_id: str | None) -> str | None:
+    """Past-session brief for memory-on personas; None (blank slate) when off."""
+    if not persona.memory:
         logger.info("Memory off for this persona — blank slate (recorded, no cross-session memory)")
+        return None
+    memory_brief = await load_memory_brief(pool, user_id)
+    if memory_brief:
+        logger.info(f"Loaded memory brief ({len(memory_brief)} chars) for user {user_id}")
+    return memory_brief
 
-    transcript_observer = TranscriptObserver(recorder)
-    task = PipelineTask(
-        pipeline,
-        params=PipelineParams(
-            enable_metrics=True,
-            enable_usage_metrics=True,
-        ),
-        observers=[transcript_observer],
-    )
 
-    kicked_off = False
+def make_kickoff(task, context, recorder, persona: Persona, memory_brief: str | None):
+    """Return a once-only `kickoff(source)` that seeds the context (memory brief +
+    opening messages, the latter also recorded) and queues the first LLM run.
+    Idempotent across triggers (rtvi ready / first participant joined)."""
+    state = {"done": False}
 
     async def kickoff(source: str):
-        nonlocal kicked_off
-        if kicked_off:
+        if state["done"]:
             return
-        kicked_off = True
+        state["done"] = True
         logger.info(f"Kicking off conversation via {source}")
         if memory_brief:
             context.add_message({"role": "user", "content": memory_brief})
@@ -222,6 +202,12 @@ async def run_bot(
             context.add_message(msg)
             recorder.record_message(role=msg.get("role", "system"), text=msg.get("content", ""))
         await task.queue_frames([LLMRunFrame()])
+
+    return kickoff
+
+
+def register_transport_handlers(transport, task, recorder, transcript_observer, kickoff):
+    """Wire the kickoff triggers and the disconnect teardown onto the transport/task."""
 
     # RTVI-aware clients (e.g. Pipecat React SDK) — keep for forward-compat.
     @task.rtvi.event_handler("on_client_ready")
@@ -249,9 +235,49 @@ async def run_bot(
         await task.cancel()
 
 
+async def run_bot(
+    transport: BaseTransport,
+    agent_name: str,
+    pool: asyncpg.Pool,
+    user_id: str | None = None,
+):
+    """Main bot logic — orchestrates the builders into a running pipeline."""
+    persona = load_persona(agent_name)
+    logger.info(f"Starting bot with persona: {persona.name}")
+
+    stt = build_stt(persona)
+    tts = build_tts(persona)
+    logger.info(f"TTS: {persona.tts_provider} voice={persona.voice_id}")
+    llm = build_llm(persona)
+    logger.info(f"LLM: {persona.llm_provider}:{persona.llm_model}")
+
+    # Warm the LLM connection now, while the caller is still connecting, so the
+    # intro turn isn't the cold first request. Fire-and-forget; keep a reference
+    # so the task isn't garbage-collected mid-flight.
+    prewarm_task = asyncio.create_task(prewarm_llm(llm))
+
+    context, user_aggregator, assistant_aggregator = build_context_aggregators()
+    pipeline = build_pipeline(transport, stt, llm, tts, user_aggregator, assistant_aggregator)
+
+    recorder = create_recorder(pool, persona, user_id)
+    await recorder.start()
+    logger.info(f"Recording session {recorder.session_id} to Supabase")
+    memory_brief = await _load_memory_brief(pool, persona, user_id)
+
+    transcript_observer = TranscriptObserver(recorder)
+    task = PipelineTask(
+        pipeline,
+        params=PipelineParams(
+            enable_metrics=True,
+            enable_usage_metrics=True,
+        ),
+        observers=[transcript_observer],
+    )
+
+    kickoff = make_kickoff(task, context, recorder, persona, memory_brief)
+    register_transport_handlers(transport, task, recorder, transcript_observer, kickoff)
 
     runner = PipelineRunner(handle_sigint=False)
-
     await runner.run(task)
 
 

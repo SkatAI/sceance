@@ -49,6 +49,52 @@ def make_persona(**changes):
     return Persona.from_dict(raw, id="agent")
 
 
+class FakeDeepgramSTTService(FakeOpenAIService):
+    pass
+
+
+class FakeStallGuardedSTTService(FakeOpenAIService):
+    pass
+
+
+def _patch_stt(monkeypatch):
+    # build_stt constructs StallGuardedDeepgramSTTService and reads
+    # DeepgramSTTService.Settings; fake both so we can inspect the chosen model.
+    monkeypatch.setattr(bot, "StallGuardedDeepgramSTTService", FakeStallGuardedSTTService)
+    monkeypatch.setattr(bot, "DeepgramSTTService", FakeDeepgramSTTService)
+
+
+def test_build_stt_defaults_english_to_nova_3(monkeypatch):
+    _patch_stt(monkeypatch)
+    persona = make_persona(agent={"lang": "en"}, stt={"model": ""})
+
+    stt = bot.build_stt(persona)
+
+    assert stt.settings.kwargs["model"] == "nova-3"
+    assert stt.settings.kwargs["language"] == "en"
+
+
+def test_build_stt_defaults_non_english_to_nova_2(monkeypatch):
+    _patch_stt(monkeypatch)
+    persona = make_persona(agent={"lang": "fr"}, stt={"model": ""})
+
+    stt = bot.build_stt(persona)
+
+    assert stt.settings.kwargs["model"] == "nova-2"
+    assert stt.settings.kwargs["language"] == "fr"
+
+
+def test_build_stt_uses_explicit_persona_model(monkeypatch):
+    _patch_stt(monkeypatch)
+    # Explicit stt.model wins over the language default (here English would
+    # otherwise pick nova-3).
+    persona = make_persona(agent={"lang": "en"}, stt={"model": "nova-2-medical"})
+
+    stt = bot.build_stt(persona)
+
+    assert stt.settings.kwargs["model"] == "nova-2-medical"
+
+
 def test_stt_recovery_message_localizes_by_language():
     # The STT stall watchdog speaks this; it must match the persona language so a
     # French session doesn't break into English on a recovery prompt.

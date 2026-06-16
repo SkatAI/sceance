@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-06-16 — Break up run_bot into named builders (refactor Task 6)
+
+- `run_bot` inlined every construction and wiring step (~135 lines). Split it into
+  module-level builders — `build_stt`, `build_context_aggregators`, `build_pipeline`,
+  `create_recorder`, `_load_memory_brief`, `make_kickoff`,
+  `register_transport_handlers` — so `run_bot` (now ~45 lines) reads as
+  orchestration. STT model selection (nova-3 for English, nova-2 otherwise,
+  explicit `stt.model` wins) is now `build_stt` and directly unit-tested. The STT
+  stall-recovery messages now live with `build_stt`. No runtime behavior change;
+  the existing memory-on / memory-off `run_bot` tests pass unchanged.
+
 ## 2026-06-16 — Extract prompt/language policy (refactor Task 5)
 
 - The shared system-prompt appendix and the output-language directive lived in
