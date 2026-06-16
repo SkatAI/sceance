@@ -43,6 +43,13 @@ class Settings:
     supabase_service_role_key: str = ""
     supabase_db_url: str = ""
     supabase_pool_max: int = 8
+    # Provider API keys (None when unset, matching the prior os.getenv behavior).
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
+    groq_api_key: str | None = None
+    cartesia_api_key: str | None = None
+    deepgram_api_key: str | None = None
+    gradium_api_key: str | None = None
     # Paths
     static_dir: Path = _DEFAULT_STATIC_DIR
     personas_dir: Path = _DEFAULT_PERSONAS_DIR
@@ -61,6 +68,12 @@ class Settings:
             supabase_service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip(),
             supabase_db_url=os.getenv("SUPABASE_DB_URL", "").strip(),
             supabase_pool_max=int(os.getenv("SUPABASE_POOL_MAX", "8")),
+            openai_api_key=os.getenv("OPENAI_API_KEY"),
+            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+            groq_api_key=os.getenv("GROQ_API_KEY"),
+            cartesia_api_key=os.getenv("CARTESIA_API_KEY"),
+            deepgram_api_key=os.getenv("DEEPGRAM_API_KEY"),
+            gradium_api_key=os.getenv("GRADIUM_API_KEY"),
         )
 
 

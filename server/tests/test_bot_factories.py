@@ -5,7 +5,9 @@ import asyncio
 import pytest
 
 import bot
+import providers
 from personas import Persona
+from settings import get_settings
 from tests.test_personas import persona_payload
 
 
@@ -64,8 +66,8 @@ def test_stt_recovery_message_localizes_by_language():
 
 
 def test_build_llm_creates_openai_service(monkeypatch):
-    monkeypatch.setattr(bot, "OpenAIResponsesHttpLLMService", FakeOpenAIService)
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    monkeypatch.setattr(providers, "OpenAIResponsesHttpLLMService", FakeOpenAIService)
+    monkeypatch.setattr(get_settings(), "openai_api_key", "openai-key")
     persona = make_persona(llm={"provider": "openai", "temperature": 0.7})
 
     service = bot.build_llm(persona)
@@ -79,8 +81,8 @@ def test_build_llm_creates_openai_service(monkeypatch):
 
 
 def test_build_llm_creates_anthropic_service_with_prompt_cache(monkeypatch):
-    monkeypatch.setattr(bot, "AnthropicLLMService", FakeAnthropicService)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
+    monkeypatch.setattr(providers, "AnthropicLLMService", FakeAnthropicService)
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", "anthropic-key")
     persona = make_persona(llm={"provider": "anthropic"})
 
     service = bot.build_llm(persona)
@@ -91,8 +93,8 @@ def test_build_llm_creates_anthropic_service_with_prompt_cache(monkeypatch):
 
 
 def test_build_llm_creates_groq_service(monkeypatch):
-    monkeypatch.setattr(bot, "GroqLLMService", FakeGroqService)
-    monkeypatch.setenv("GROQ_API_KEY", "groq-key")
+    monkeypatch.setattr(providers, "GroqLLMService", FakeGroqService)
+    monkeypatch.setattr(get_settings(), "groq_api_key", "groq-key")
     persona = make_persona(
         llm={"provider": "groq", "model": "mistral-saba-24b", "temperature": 0.5}
     )
@@ -111,6 +113,13 @@ def test_build_llm_rejects_unknown_provider():
 
     with pytest.raises(ValueError, match="Unknown LLM provider"):
         bot.build_llm(persona)
+
+
+def test_llm_and_tts_registries_list_supported_providers():
+    # Adding a provider should be a registry entry, not an orchestration edit —
+    # so the registries are the single source of truth for what's supported.
+    assert set(providers.LLM_FACTORIES) == {"openai", "anthropic", "groq"}
+    assert set(providers.TTS_FACTORIES) == {"cartesia", "deepgram", "gradium"}
 
 
 def test_prewarm_llm_warms_the_shared_client_pool():
@@ -156,8 +165,8 @@ def test_prewarm_llm_noop_without_client():
 
 
 def test_build_tts_creates_cartesia_service(monkeypatch):
-    monkeypatch.setattr(bot, "CartesiaTTSService", FakeCartesiaService)
-    monkeypatch.setenv("CARTESIA_API_KEY", "cartesia-key")
+    monkeypatch.setattr(providers, "CartesiaTTSService", FakeCartesiaService)
+    monkeypatch.setattr(get_settings(), "cartesia_api_key", "cartesia-key")
     persona = make_persona(tts={"provider": "cartesia"})
 
     service = bot.build_tts(persona)
@@ -182,9 +191,9 @@ def test_build_tts_requires_cartesia_voice_id():
 def test_build_tts_creates_deepgram_service(monkeypatch):
     # build_tts constructs SpeedDeepgramTTSService (the speed-aware subclass) and
     # reads DeepgramTTSService.Settings; fake both.
-    monkeypatch.setattr(bot, "SpeedDeepgramTTSService", FakeDeepgramTTSService)
-    monkeypatch.setattr(bot, "DeepgramTTSService", FakeDeepgramTTSService)
-    monkeypatch.setenv("DEEPGRAM_API_KEY", "deepgram-key")
+    monkeypatch.setattr(providers, "SpeedDeepgramTTSService", FakeDeepgramTTSService)
+    monkeypatch.setattr(providers, "DeepgramTTSService", FakeDeepgramTTSService)
+    monkeypatch.setattr(get_settings(), "deepgram_api_key", "deepgram-key")
     persona = make_persona(tts={"provider": "deepgram", "model": "aura-2"})
 
     service = bot.build_tts(persona)
@@ -198,9 +207,9 @@ def test_build_tts_creates_deepgram_service(monkeypatch):
 
 
 def test_build_tts_forwards_deepgram_speed(monkeypatch):
-    monkeypatch.setattr(bot, "SpeedDeepgramTTSService", FakeDeepgramTTSService)
-    monkeypatch.setattr(bot, "DeepgramTTSService", FakeDeepgramTTSService)
-    monkeypatch.setenv("DEEPGRAM_API_KEY", "deepgram-key")
+    monkeypatch.setattr(providers, "SpeedDeepgramTTSService", FakeDeepgramTTSService)
+    monkeypatch.setattr(providers, "DeepgramTTSService", FakeDeepgramTTSService)
+    monkeypatch.setattr(get_settings(), "deepgram_api_key", "deepgram-key")
     persona = make_persona(tts={"provider": "deepgram", "model": "aura-2", "speed": 1.3})
 
     service = bot.build_tts(persona)
@@ -209,8 +218,8 @@ def test_build_tts_forwards_deepgram_speed(monkeypatch):
 
 
 def test_build_tts_creates_gradium_service(monkeypatch):
-    monkeypatch.setattr(bot, "GradiumTTSService", FakeGradiumTTSService)
-    monkeypatch.setenv("GRADIUM_API_KEY", "gradium-key")
+    monkeypatch.setattr(providers, "GradiumTTSService", FakeGradiumTTSService)
+    monkeypatch.setattr(get_settings(), "gradium_api_key", "gradium-key")
     persona = make_persona(
         tts={
             "provider": "gradium",
@@ -239,8 +248,8 @@ def test_build_tts_requires_gradium_voice_id():
 
 
 def test_build_tts_passes_token_aggregation_mode_from_persona(monkeypatch):
-    monkeypatch.setattr(bot, "CartesiaTTSService", FakeCartesiaService)
-    monkeypatch.setenv("CARTESIA_API_KEY", "cartesia-key")
+    monkeypatch.setattr(providers, "CartesiaTTSService", FakeCartesiaService)
+    monkeypatch.setattr(get_settings(), "cartesia_api_key", "cartesia-key")
     raw = persona_payload(pipecat={"TextAggregationMode": "TOKEN"})
     persona = Persona.from_dict(raw, id="token-agent")
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-06-16 — Provider factory registries (refactor Task 4)
+
+- `bot.build_llm` / `bot.build_tts` were `if provider == …` chains that read each
+  provider's API key and built its service inline, so adding a provider meant
+  editing core orchestration. Extracted the per-provider factories into a new
+  `providers.py` with `LLM_FACTORIES` / `TTS_FACTORIES` registries; `build_llm`
+  and `build_tts` are now thin wrappers that assemble the shared inputs and
+  dispatch by `persona.llm_provider` / `persona.tts_provider`. Adding a provider
+  is now a factory + a registry entry, no orchestration edit. Folded the six
+  provider API keys (OpenAI/Anthropic/Groq/Cartesia/Deepgram/Gradium) into the
+  Settings object (the keys deferred from Task 3), so factories read
+  `get_settings().<provider>_api_key`; both Deepgram key reads (TTS + STT) now
+  share that one home. `bot.py` 443 → 357 lines.
+
 ## 2026-06-16 — Centralize env reads in a Settings object (refactor Task 3)
 
 - Environment configuration was scattered as import-time module globals across

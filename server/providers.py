@@ -1,0 +1,123 @@
+"""Per-provider LLM and TTS service factories, with registries.
+
+`bot.build_llm` / `bot.build_tts` are thin wrappers that look up the right
+factory here by `persona.llm_provider` / `persona.tts_provider`. Adding a
+provider means adding a factory + a registry entry — no edit to bot
+orchestration.
+
+Each factory validates only its own requirements, reads its own API key from
+`get_settings()`, and constructs only its own service. The shared system
+instruction (prompt policy) is assembled by the caller and passed in; Task 5
+extracts that assembly into a prompting module.
+"""
+
+from __future__ import annotations
+
+from pipecat.services.anthropic.llm import AnthropicLLMService
+from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.deepgram.tts import DeepgramTTSService
+from pipecat.services.gradium.tts import GradiumTTSService
+from pipecat.services.groq.llm import GroqLLMService
+from pipecat.services.openai.responses.llm import OpenAIResponsesHttpLLMService
+
+from deepgram_tts import SpeedDeepgramTTSService
+from personas import Persona
+from settings import get_settings
+
+# ---- LLM factories --------------------------------------------------------
+
+
+def build_openai_llm(persona: Persona, system_instruction: str):
+    openai_settings = {"model": persona.llm_model, "system_instruction": system_instruction}
+    if persona.temperature is not None:
+        openai_settings["temperature"] = persona.temperature
+    return OpenAIResponsesHttpLLMService(
+        api_key=get_settings().openai_api_key,
+        settings=OpenAIResponsesHttpLLMService.Settings(**openai_settings),
+    )
+
+
+def build_anthropic_llm(persona: Persona, system_instruction: str):
+    anthropic_settings = {
+        "model": persona.llm_model,
+        "system_instruction": system_instruction,
+        "enable_prompt_caching": True,
+    }
+    if persona.temperature is not None:
+        anthropic_settings["temperature"] = persona.temperature
+    return AnthropicLLMService(
+        api_key=get_settings().anthropic_api_key,
+        settings=AnthropicLLMService.Settings(**anthropic_settings),
+    )
+
+
+def build_groq_llm(persona: Persona, system_instruction: str):
+    # Groq is an OpenAI-compatible chat-completions endpoint (LPU-hosted, very
+    # low latency). Same Settings shape as OpenAI; hosts e.g. mistral-saba-24b.
+    groq_settings = {"model": persona.llm_model, "system_instruction": system_instruction}
+    if persona.temperature is not None:
+        groq_settings["temperature"] = persona.temperature
+    return GroqLLMService(
+        api_key=get_settings().groq_api_key,
+        settings=GroqLLMService.Settings(**groq_settings),
+    )
+
+
+LLM_FACTORIES = {
+    "openai": build_openai_llm,
+    "anthropic": build_anthropic_llm,
+    "groq": build_groq_llm,
+}
+
+
+# ---- TTS factories --------------------------------------------------------
+
+
+def build_cartesia_tts(persona: Persona, lang: str, agg_mode):
+    if not persona.voice_id:
+        raise ValueError("cartesia TTS requires tts.voice_id")
+    cartesia_settings = {"voice": persona.voice_id, "language": lang}
+    if persona.tts_model:
+        cartesia_settings["model"] = persona.tts_model
+    return CartesiaTTSService(
+        api_key=get_settings().cartesia_api_key,
+        settings=CartesiaTTSService.Settings(**cartesia_settings),
+        text_aggregation_mode=agg_mode,
+    )
+
+
+def build_deepgram_tts(persona: Persona, lang: str, agg_mode):
+    # Deepgram folds voice into the model name (e.g. "aura-2-pandora-en"), which
+    # is English-only — no separate voice_id or language to pass.
+    if not persona.tts_model:
+        raise ValueError("deepgram TTS requires tts.model (e.g. 'aura-2-pandora-en')")
+    # speed: Deepgram speaking-rate multiplier (0.7–1.5); None → provider default.
+    return SpeedDeepgramTTSService(
+        api_key=get_settings().deepgram_api_key,
+        settings=DeepgramTTSService.Settings(voice=persona.tts_model),
+        text_aggregation_mode=agg_mode,
+        speed=persona.tts_speed,
+    )
+
+
+def build_gradium_tts(persona: Persona, lang: str, agg_mode):
+    # Gradium hosts Kyutai's streaming TTS (e.g. "kyutai/tts-1.6b-en_fr", en+fr,
+    # 48kHz WebSocket). voice_id + model come from the Gradium dashboard/voice
+    # library; tts.model is optional (defaults to Gradium's).
+    if not persona.voice_id:
+        raise ValueError("gradium TTS requires tts.voice_id")
+    gradium_settings = {"voice": persona.voice_id, "language": lang}
+    if persona.tts_model:
+        gradium_settings["model"] = persona.tts_model
+    return GradiumTTSService(
+        api_key=get_settings().gradium_api_key,
+        settings=GradiumTTSService.Settings(**gradium_settings),
+        text_aggregation_mode=agg_mode,
+    )
+
+
+TTS_FACTORIES = {
+    "cartesia": build_cartesia_tts,
+    "deepgram": build_deepgram_tts,
+    "gradium": build_gradium_tts,
+}

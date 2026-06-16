@@ -38,25 +38,20 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMUserAggregatorParams,
 )
 from pipecat.runner.types import DailyRunnerArguments, RunnerArguments, SmallWebRTCRunnerArguments
-from pipecat.services.anthropic.llm import AnthropicLLMService
-from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.deepgram.tts import DeepgramTTSService
-from pipecat.services.gradium.tts import GradiumTTSService
-from pipecat.services.groq.llm import GroqLLMService
-from pipecat.services.openai.responses.llm import OpenAIResponsesHttpLLMService
 from pipecat.services.tts_service import TextAggregationMode
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.daily.transport import DailyParams, DailyTransport
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 
+import providers
 from deepgram_stt import StallGuardedDeepgramSTTService
-from deepgram_tts import SpeedDeepgramTTSService
 from memory import load_memory_brief
 from observer import TranscriptObserver
 from personas import Persona, load_persona
 from recorder import SessionRecorder
+from settings import get_settings
 
 load_dotenv(override=True)
 
@@ -109,55 +104,18 @@ def _stt_recovery_message(lang: str) -> str:
 
 
 def build_llm(persona: Persona):
-    """Build the right pipecat LLM service for a persona, routed on
-    `persona.llm_provider` (`openai` / `anthropic` / `groq`)."""
-    provider = persona.llm_provider
-    model = persona.llm_model
+    """Assemble the shared system instruction, then dispatch to the LLM provider
+    factory registered for `persona.llm_provider` (`openai`/`anthropic`/`groq`)."""
     lang = (persona.lang or "en").lower()
     system_instruction = (
         persona.system_prompt
         + SHARED_SYSTEM_APPENDIX
         + _language_directive(lang)
     )
-    temperature = persona.temperature  # None → use provider default
-
-    if provider == "openai":
-        openai_settings = {
-            "model": model,
-            "system_instruction": system_instruction,
-        }
-        if temperature is not None:
-            openai_settings["temperature"] = temperature
-        return OpenAIResponsesHttpLLMService(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            settings=OpenAIResponsesHttpLLMService.Settings(**openai_settings),
-        )
-    if provider == "anthropic":
-        anthropic_settings = {
-            "model": model,
-            "system_instruction": system_instruction,
-            "enable_prompt_caching": True,
-        }
-        if temperature is not None:
-            anthropic_settings["temperature"] = temperature
-        return AnthropicLLMService(
-            api_key=os.getenv("ANTHROPIC_API_KEY"),
-            settings=AnthropicLLMService.Settings(**anthropic_settings),
-        )
-    if provider == "groq":
-        # Groq is an OpenAI-compatible chat-completions endpoint (LPU-hosted, very
-        # low latency). Same Settings shape as OpenAI; hosts e.g. mistral-saba-24b.
-        groq_settings = {
-            "model": model,
-            "system_instruction": system_instruction,
-        }
-        if temperature is not None:
-            groq_settings["temperature"] = temperature
-        return GroqLLMService(
-            api_key=os.getenv("GROQ_API_KEY"),
-            settings=GroqLLMService.Settings(**groq_settings),
-        )
-    raise ValueError(f"Unknown LLM provider in persona: {provider!r}")
+    factory = providers.LLM_FACTORIES.get(persona.llm_provider)
+    if factory is None:
+        raise ValueError(f"Unknown LLM provider in persona: {persona.llm_provider!r}")
+    return factory(persona, system_instruction)
 
 
 async def prewarm_llm(llm) -> None:
@@ -184,61 +142,17 @@ async def prewarm_llm(llm) -> None:
 
 
 def build_tts(persona: Persona):
-    """Build the right pipecat TTS service for a persona, routed on
-    `persona.tts_provider` (`cartesia` / `deepgram` / `gradium`). The seam is
-    here so ElevenLabs/Hume can slot in later (see notes.md intended stack)."""
-    provider = persona.tts_provider
+    """Dispatch to the TTS provider factory registered for `persona.tts_provider`
+    (`cartesia`/`deepgram`/`gradium`). The seam is here so ElevenLabs/Hume can
+    slot in later (see notes.md intended stack)."""
     lang = (persona.lang or "en").lower()
     # SENTENCE (default) buffers to sentence boundaries; TOKEN streams tokens
     # for lower first-word latency. persona guarantees one of these two names.
     agg_mode = TextAggregationMode[persona.text_aggregation_mode]
-
-    if provider == "cartesia":
-        if not persona.voice_id:
-            raise ValueError("cartesia TTS requires tts.voice_id")
-        cartesia_settings = {
-            "voice": persona.voice_id,
-            "language": lang,
-        }
-        if persona.tts_model:
-            cartesia_settings["model"] = persona.tts_model
-        return CartesiaTTSService(
-            api_key=os.getenv("CARTESIA_API_KEY"),
-            settings=CartesiaTTSService.Settings(**cartesia_settings),
-            text_aggregation_mode=agg_mode,
-        )
-    if provider == "deepgram":
-        # Deepgram folds voice into the model name (e.g. "aura-2-pandora-en"),
-        # which is English-only — no separate voice_id or language to pass.
-        if not persona.tts_model:
-            raise ValueError(
-                "deepgram TTS requires tts.model (e.g. 'aura-2-pandora-en')"
-            )
-        # speed: Deepgram speaking-rate multiplier (0.7–1.5); None → provider default.
-        return SpeedDeepgramTTSService(
-            api_key=os.getenv("DEEPGRAM_API_KEY"),
-            settings=DeepgramTTSService.Settings(voice=persona.tts_model),
-            text_aggregation_mode=agg_mode,
-            speed=persona.tts_speed,
-        )
-    if provider == "gradium":
-        # Gradium hosts Kyutai's streaming TTS (e.g. "kyutai/tts-1.6b-en_fr",
-        # en+fr, 48kHz WebSocket). voice_id + model are taken from the Gradium
-        # dashboard/voice library; tts.model is optional (defaults to Gradium's).
-        if not persona.voice_id:
-            raise ValueError("gradium TTS requires tts.voice_id")
-        gradium_settings = {
-            "voice": persona.voice_id,
-            "language": lang,
-        }
-        if persona.tts_model:
-            gradium_settings["model"] = persona.tts_model
-        return GradiumTTSService(
-            api_key=os.getenv("GRADIUM_API_KEY"),
-            settings=GradiumTTSService.Settings(**gradium_settings),
-            text_aggregation_mode=agg_mode,
-        )
-    raise ValueError(f"Unknown TTS provider in persona: {provider!r}")
+    factory = providers.TTS_FACTORIES.get(persona.tts_provider)
+    if factory is None:
+        raise ValueError(f"Unknown TTS provider in persona: {persona.tts_provider!r}")
+    return factory(persona, lang, agg_mode)
 
 
 async def run_bot(
@@ -261,7 +175,7 @@ async def run_bot(
     # it forces a reconnect so the next turn lands on a healthy connection and
     # speaks `recovery_message` so the dead air is audible.
     stt = StallGuardedDeepgramSTTService(
-        api_key=os.getenv("DEEPGRAM_API_KEY"),
+        api_key=get_settings().deepgram_api_key,
         settings=DeepgramSTTService.Settings(
             model=stt_model,
             language=lang,
