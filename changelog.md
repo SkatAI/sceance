@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-06-16 — Extract Daily room client from server.py (refactor)
+
+- First step of the `docs/refactoring_plan_2026-06-14.md` decomposition (Task 1).
+  Moved the Daily REST calls (`_create_daily_room`, `_create_meeting_token`) and
+  their constants out of the `server.py` god module into a new `daily_client.py`:
+  `create_room`, `create_meeting_token`, plus a `make_client(api_key)` factory
+  that owns the `Bearer` auth header and timeout. `start_session` now delegates
+  and no longer knows Daily endpoint paths, payload shapes, or the auth scheme.
+  Behavior and the `/start-session` response are unchanged. Test fakes moved to
+  `tests/fakes.py` (shared by the unit + integration tests); new
+  `tests/test_daily_client.py` covers payloads and the client factory.
+
 ## 2026-06-14 — Pre-warm LLM connection to cut intro latency
 
 - The agent's self-introduction paid full LLM cold-start cost (~3.4s TTFB, ~4s

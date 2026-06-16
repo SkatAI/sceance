@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -29,6 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
+import daily_client
 from auth import CurrentUser, get_current_user, require_admin
 from bot import run_daily_bot
 from latency import _quantile, generate_and_store
@@ -44,12 +44,10 @@ from supabase_admin import (
 load_dotenv(override=True)
 
 DAILY_API_KEY = os.getenv("DAILY_API_KEY", "")
-DAILY_API_BASE = "https://api.daily.co/v1"
 MAX_SESSIONS = int(os.getenv("MAX_SESSIONS", "5"))
 # When true, an unrecognized email is auto-created on sign-in (local/dev). When
 # false (deployed), unknown emails are rejected as invite-only.
 OPEN_SIGNUP = os.getenv("OPEN_SIGNUP", "").strip().lower() in ("1", "true", "yes")
-ROOM_EXPIRY_SECONDS = 30 * 60  # 30 min
 
 STATIC_DIR = Path(__file__).parent / "static"
 PERSONAS_DIR = Path(__file__).parent.parent / "personas"
@@ -65,36 +63,6 @@ def _cleanup_task(task: asyncio.Task) -> None:
         task.result()
     except Exception:
         logger.exception("Bot task failed")
-
-
-async def _create_daily_room(client: httpx.AsyncClient) -> dict:
-    expiry = int(time.time()) + ROOM_EXPIRY_SECONDS
-    payload = {
-        "properties": {
-            "exp": expiry,
-            "eject_at_room_exp": True,
-            "enable_chat": False,
-            "enable_screenshare": False,
-            "start_video_off": True,
-            "start_audio_off": False,
-        },
-    }
-    r = await client.post(f"{DAILY_API_BASE}/rooms", json=payload)
-    r.raise_for_status()
-    return r.json()
-
-
-async def _create_meeting_token(client: httpx.AsyncClient, room_name: str, is_owner: bool) -> str:
-    payload = {
-        "properties": {
-            "room_name": room_name,
-            "is_owner": is_owner,
-            "exp": int(time.time()) + ROOM_EXPIRY_SECONDS,
-        },
-    }
-    r = await client.post(f"{DAILY_API_BASE}/meeting-tokens", json=payload)
-    r.raise_for_status()
-    return r.json()["token"]
 
 
 @asynccontextmanager
@@ -232,14 +200,13 @@ async def start_session(
     if not DAILY_API_KEY:
         raise HTTPException(status_code=500, detail="daily_api_key_missing")
 
-    headers = {"Authorization": f"Bearer {DAILY_API_KEY}"}
-    async with httpx.AsyncClient(headers=headers, timeout=15.0) as client:
+    async with daily_client.make_client(DAILY_API_KEY) as client:
         try:
-            room = await _create_daily_room(client)
+            room = await daily_client.create_room(client)
             room_name = room["name"]
             room_url = room["url"]
-            user_token = await _create_meeting_token(client, room_name, is_owner=False)
-            bot_token = await _create_meeting_token(client, room_name, is_owner=True)
+            user_token = await daily_client.create_meeting_token(client, room_name, is_owner=False)
+            bot_token = await daily_client.create_meeting_token(client, room_name, is_owner=True)
         except httpx.HTTPError as e:
             logger.exception("Daily REST call failed")
             raise HTTPException(status_code=502, detail=f"daily_error: {e}")

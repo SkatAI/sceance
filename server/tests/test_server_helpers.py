@@ -11,38 +11,8 @@ from fastapi import HTTPException
 
 import server
 from auth import CurrentUser
+from tests.fakes import FakeDailyClient
 from tests.test_personas import persona_payload
-
-
-class FakeResponse:
-    def __init__(self, data, status_code=200):
-        self.data = data
-        self.status_code = status_code
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise server.httpx.HTTPStatusError(
-                "bad response",
-                request=server.httpx.Request("POST", "https://example.test"),
-                response=server.httpx.Response(self.status_code),
-            )
-
-    def json(self):
-        return self.data
-
-
-class FakeDailyClient:
-    def __init__(self):
-        self.posts = []
-
-    async def post(self, url, json):
-        self.posts.append((url, json))
-        if url.endswith("/rooms"):
-            return FakeResponse({"name": "room-a", "url": "https://room.test/a"})
-        if url.endswith("/meeting-tokens"):
-            owner = json["properties"]["is_owner"]
-            return FakeResponse({"token": "bot-token" if owner else "user-token"})
-        raise AssertionError(url)
 
 
 def test_quantile_handles_empty_single_and_interpolated_values():
@@ -62,27 +32,6 @@ def test_pair_response_latencies_pairs_recent_unanswered_user_stop():
     ]
 
     assert server._pair_response_latencies(events) == [1.5]
-
-
-def test_daily_room_and_token_payloads_include_expected_properties(monkeypatch):
-    monkeypatch.setattr(server.time, "time", lambda: 1000)
-    client = FakeDailyClient()
-
-    room = asyncio.run(server._create_daily_room(client))
-    token = asyncio.run(server._create_meeting_token(client, "room-a", is_owner=True))
-
-    assert room == {"name": "room-a", "url": "https://room.test/a"}
-    assert token == "bot-token"
-    room_payload = client.posts[0][1]["properties"]
-    token_payload = client.posts[1][1]["properties"]
-    assert room_payload["exp"] == 1000 + server.ROOM_EXPIRY_SECONDS
-    assert room_payload["eject_at_room_exp"] is True
-    assert room_payload["enable_chat"] is False
-    assert token_payload == {
-        "room_name": "room-a",
-        "is_owner": True,
-        "exp": 1000 + server.ROOM_EXPIRY_SECONDS,
-    }
 
 
 def test_list_agents_returns_only_active_valid_personas(tmp_path, monkeypatch):
