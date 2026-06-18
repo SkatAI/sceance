@@ -5,9 +5,7 @@ import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
-import pytest
-
-from memory import NO_PROFILE, _extract_json, load_memory_brief, summarize_and_persist
+from memory import NO_PROFILE, load_memory_brief, summarize_and_persist
 
 
 class FakeConnection:
@@ -39,26 +37,6 @@ class FakePool:
 
     def acquire(self):
         return AcquireContext(self.connection)
-
-
-def test_extract_json_accepts_plain_json():
-    assert _extract_json('{"session_summary": "ok", "updated_profile": "new"}') == {
-        "session_summary": "ok",
-        "updated_profile": "new",
-    }
-
-
-def test_extract_json_accepts_fenced_json():
-    assert _extract_json('```json\n{"a": 1}\n```') == {"a": 1}
-
-
-def test_extract_json_falls_back_to_first_object_in_prose():
-    assert _extract_json('Here it is: {"a": 1, "b": 2}. Done.') == {"a": 1, "b": 2}
-
-
-def test_extract_json_raises_when_no_json_object_exists():
-    with pytest.raises(json.JSONDecodeError):
-        _extract_json("no json here")
 
 
 def test_load_memory_brief_returns_none_for_anonymous_user():
@@ -129,7 +107,7 @@ def test_summarize_and_persist_skips_sessions_without_messages(monkeypatch):
     def fail_call(*args, **kwargs):
         raise AssertionError("summarizer should not be called")
 
-    monkeypatch.setattr("memory._call_anthropic", fail_call)
+    monkeypatch.setattr("memory.call_anthropic_text", fail_call)
 
     asyncio.run(
         summarize_and_persist(
@@ -151,13 +129,10 @@ def test_summarize_and_persist_updates_session_and_user_profile(monkeypatch):
     user_id = uuid4()
     captured = {}
 
-    class FakeAnthropic:
-        def __init__(self, api_key):
-            self.api_key = api_key
-
-    async def fake_call(client, model, prompt):
-        captured["client"] = client
+    async def fake_call(*, api_key, model, system, prompt, max_tokens=1500):
+        captured["api_key"] = api_key
         captured["model"] = model
+        captured["system"] = system
         captured["prompt"] = prompt
         return json.dumps(
             {
@@ -166,8 +141,7 @@ def test_summarize_and_persist_updates_session_and_user_profile(monkeypatch):
             }
         )
 
-    monkeypatch.setattr("memory.anthropic.Anthropic", FakeAnthropic)
-    monkeypatch.setattr("memory._call_anthropic", fake_call)
+    monkeypatch.setattr("memory.call_anthropic_text", fake_call)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-key")
 
     asyncio.run(
@@ -179,7 +153,7 @@ def test_summarize_and_persist_updates_session_and_user_profile(monkeypatch):
         )
     )
 
-    assert captured["client"].api_key == "anthropic-key"
+    assert captured["api_key"] == "anthropic-key"
     assert captured["model"] == "model-test"
     assert "Prior user profile:\nPrior profile" in captured["prompt"]
     assert "user: I need a sharper intro." in captured["prompt"]
@@ -202,15 +176,10 @@ def test_summarize_and_persist_updates_session_and_user_profile(monkeypatch):
 def test_summarize_and_persist_does_not_write_empty_summary_fields(monkeypatch):
     connection = SummaryConnection(messages=[{"role": "user", "text": "hello"}])
 
-    class FakeAnthropic:
-        def __init__(self, api_key):
-            pass
-
-    async def fake_call(client, model, prompt):
+    async def fake_call(*, api_key, model, system, prompt, max_tokens=1500):
         return json.dumps({"session_summary": "", "updated_profile": "profile"})
 
-    monkeypatch.setattr("memory.anthropic.Anthropic", FakeAnthropic)
-    monkeypatch.setattr("memory._call_anthropic", fake_call)
+    monkeypatch.setattr("memory.call_anthropic_text", fake_call)
 
     asyncio.run(summarize_and_persist(FakePool(connection), uuid4(), str(uuid4())))
 

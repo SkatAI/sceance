@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-06-18 — Share Anthropic JSON synthesis helpers (refactor Task 11)
+
+- `memory.py` and `latency.py` each carried their own copy of the same two
+  helpers: a blocking Anthropic `messages.create` run off the event loop via
+  `asyncio.to_thread` (concatenating text blocks), and a fence/prose-tolerant
+  JSON-object extractor. Extracted both into a new `llm_json.py`:
+  `call_anthropic_text(api_key, model, system, prompt, max_tokens=1500)` and
+  `extract_json_object(text)`. Both modules now import the shared helpers and
+  drop their private `_call_anthropic` / `_extract_json`. Behavior is unchanged
+  (same model call shape, same parser). The JSON-extraction tests moved out of
+  `test_memory.py` into a new `test_llm_json.py`, which also adds direct coverage
+  for `call_anthropic_text` (arg passing + text-block concatenation).
+
 ## 2026-06-16 — Remove unused NullSessionRecorder (refactor Task 10)
 
 - `NullSessionRecorder` (a no-op "record nothing to the DB" recorder) was never

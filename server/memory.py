@@ -12,13 +12,13 @@ treats it as internal context, not something to read aloud.
 
 from __future__ import annotations
 
-import json
 import os
 import uuid
 
-import anthropic
 import asyncpg
 from loguru import logger
+
+from llm_json import call_anthropic_text, extract_json_object
 
 SUMMARIZER_MODEL = "claude-sonnet-4-6"
 RECENT_SESSIONS_LIMIT = 3
@@ -114,9 +114,13 @@ async def summarize_and_persist(
             "Produce the JSON now."
         )
 
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        resp = await _call_anthropic(client, model, prompt)
-        parsed = _extract_json(resp)
+        resp = await call_anthropic_text(
+            api_key=os.getenv("ANTHROPIC_API_KEY"),
+            model=model,
+            system=_SUMMARIZER_SYSTEM,
+            prompt=prompt,
+        )
+        parsed = extract_json_object(resp)
         session_summary = (parsed.get("session_summary") or "").strip()
         updated_profile = (parsed.get("updated_profile") or "").strip()
         if not session_summary or not updated_profile:
@@ -159,44 +163,3 @@ async def summarize_and_persist(
         )
     except Exception as e:
         logger.exception(f"summarize_and_persist failed for session {session_id}: {e}")
-
-
-async def _call_anthropic(client: anthropic.Anthropic, model: str, prompt: str) -> str:
-    """Run a blocking Anthropic call off the event loop."""
-    import asyncio
-
-    def _run() -> str:
-        msg = client.messages.create(
-            model=model,
-            max_tokens=1500,
-            system=_SUMMARIZER_SYSTEM,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        # Concatenate any text blocks.
-        return "".join(getattr(b, "text", "") for b in msg.content)
-
-    return await asyncio.to_thread(_run)
-
-
-def _extract_json(text: str) -> dict:
-    """Pull the first JSON object out of the model's response.
-
-    Claude is usually compliant but occasionally wraps JSON in prose or
-    fences. We strip both.
-    """
-    s = text.strip()
-    if s.startswith("```"):
-        # Remove leading fence (```json or ```), trailing fence.
-        s = s.split("\n", 1)[1] if "\n" in s else s[3:]
-        if s.endswith("```"):
-            s = s[: -3]
-        s = s.strip()
-    try:
-        return json.loads(s)
-    except json.JSONDecodeError:
-        # Fall back to greedy brace extraction.
-        start = s.find("{")
-        end = s.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            raise
-        return json.loads(s[start : end + 1])

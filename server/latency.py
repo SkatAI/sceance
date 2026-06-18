@@ -19,14 +19,14 @@ the stall tail is flagged heuristically (threshold, no log confirmation).
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import uuid
 
-import anthropic
 import asyncpg
 from loguru import logger
+
+from llm_json import call_anthropic_text, extract_json_object
 
 SYNTH_MODEL = "claude-sonnet-4-6"
 
@@ -301,9 +301,13 @@ async def synthesize_latency_report(bundle: dict, model: str = SYNTH_MODEL) -> d
         "Here is the latency bundle for one session. Produce the JSON now.\n\n"
         + json.dumps(bundle, indent=2)
     )
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-    raw = await _call_anthropic(client, model, prompt)
-    report = _extract_json(raw)
+    raw = await call_anthropic_text(
+        api_key=os.getenv("ANTHROPIC_API_KEY"),
+        model=model,
+        system=_SYNTH_SYSTEM,
+        prompt=prompt,
+    )
+    report = extract_json_object(raw)
     # Normalise the keys we depend on downstream.
     report.setdefault("headline", "")
     report.setdefault("main_cause", "")
@@ -312,38 +316,6 @@ async def synthesize_latency_report(bundle: dict, model: str = SYNTH_MODEL) -> d
     if not isinstance(report["unexplained"], list):
         report["unexplained"] = [str(report["unexplained"])]
     return report
-
-
-async def _call_anthropic(client: anthropic.Anthropic, model: str, prompt: str) -> str:
-    """Run a blocking Anthropic call off the event loop."""
-    def _run() -> str:
-        msg = client.messages.create(
-            model=model,
-            max_tokens=1500,
-            system=_SYNTH_SYSTEM,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return "".join(getattr(b, "text", "") for b in msg.content)
-
-    return await asyncio.to_thread(_run)
-
-
-def _extract_json(text: str) -> dict:
-    """Pull the first JSON object out of the model's response (fences/prose tolerant)."""
-    s = text.strip()
-    if s.startswith("```"):
-        s = s.split("\n", 1)[1] if "\n" in s else s[3:]
-        if s.endswith("```"):
-            s = s[:-3]
-        s = s.strip()
-    try:
-        return json.loads(s)
-    except json.JSONDecodeError:
-        start = s.find("{")
-        end = s.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            raise
-        return json.loads(s[start : end + 1])
 
 
 # ─── Orchestration + storage ────────────────────────────────────────
