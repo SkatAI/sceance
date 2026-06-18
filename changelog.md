@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-06-18 — Route smoke tests for wiring (refactor Task 19)
+
+- Added `test_route_smoke.py`: FastAPI-level tests via `TestClient` that prove
+  router registration + dependency wiring survived the router/repository split.
+  The client is built without a `with` block so the app lifespan never opens a
+  real asyncpg pool; handlers that need a pool/user get their dependencies
+  overridden. Covers `/health`, `/agents`, `/api/me` (401 without a token + the
+  authenticated shape), `/start-session` validation errors (422 missing field,
+  400 blank agent, 404 unknown agent), and the admin auth-failure path (401
+  anonymous, 403 non-admin). Unit tests stay the primary coverage for SQL
+  shaping and orchestration.
+
 ## 2026-06-18 — Tighten persona model boundaries (refactor Task 17)
 
 - `Persona` was one wide dataclass carrying agent/text/llm/tts/stt/pipecat fields
