@@ -313,8 +313,7 @@ def test_build_tts_rejects_unknown_provider():
 
 
 def test_run_bot_wires_pipeline_and_kickoff_with_memory(monkeypatch):
-    persona = make_persona()
-    persona.opening_messages = [{"role": "system", "content": "Opening."}]
+    persona = make_persona(persona={"opening_messages": [{"role": "system", "content": "Opening."}]})
     context_messages = []
     recorded_messages = []
     handlers = {}

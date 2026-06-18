@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-06-18 — Tighten persona model boundaries (refactor Task 17)
+
+- `Persona` was one wide dataclass carrying agent/text/llm/tts/stt/pipecat fields
+  with all parsing + validation inline in `from_dict`. Split each section into a
+  small frozen config that owns its own validation — `AgentConfig`,
+  `PersonaTextConfig`, `LLMConfig`, `TTSConfig`, `STTConfig`, `PipecatConfig` —
+  each with a `from_section` classmethod. `Persona` now holds those six and
+  exposes the grouped objects (`persona.llm`, `persona.tts`, …) for new code,
+  while keeping every flat attribute (`persona.llm_model`, `persona.voice_id`, …)
+  as a compatibility property, so all existing call sites and the DB snapshot
+  (`persona.raw` / `public()`) are unchanged. This adds lines but isolates each
+  section's validation; call sites were already clean, so they stay flat.
+- New explicit validation: `llm.temperature` must be `None` or a number in
+  `[0.0, 2.0]` (bool rejected); `persona.opening_messages` must be a list of
+  `{role, content}` objects. All shipped persona JSON files still parse. Added
+  tests for the grouped configs and both validations.
+
 ## 2026-06-18 — Normalize session-detail persona projection (refactor Task 14)
 
 - `api_session_detail` parsed the stored `persona_json` snapshot inline (decode if

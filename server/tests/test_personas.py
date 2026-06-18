@@ -237,6 +237,69 @@ def test_from_dict_rejects_missing_sections():
         Persona.from_dict(raw, id="broken")
 
 
+def test_grouped_configs_expose_section_data():
+    persona = Persona.from_dict(persona_payload(), id="grouped")
+
+    # Provider factories can read grouped objects directly…
+    assert persona.llm.model == "gpt-test"
+    assert persona.llm.provider == "openai"
+    assert persona.tts.voice_id == "voice-123"
+    assert persona.stt.provider == "deepgram"
+    assert persona.pipecat.text_aggregation_mode == "SENTENCE"
+    # …and the flat compatibility properties mirror them.
+    assert persona.llm_model == persona.llm.model
+    assert persona.voice_id == persona.tts.voice_id
+
+
+def test_temperature_accepts_none_and_in_range():
+    raw = persona_payload()
+    raw["llm"]["temperature"] = 1.0
+    assert Persona.from_dict(raw, id="t").temperature == 1.0
+
+    raw["llm"]["temperature"] = None
+    assert Persona.from_dict(raw, id="t").temperature is None
+
+
+def test_temperature_rejects_out_of_range():
+    raw = persona_payload()
+    raw["llm"]["temperature"] = 2.5
+
+    with pytest.raises(PersonaError, match="temperature.*between 0.0 and 2.0"):
+        Persona.from_dict(raw, id="hot")
+
+
+def test_temperature_rejects_non_numeric():
+    raw = persona_payload()
+    raw["llm"]["temperature"] = "warm"
+
+    with pytest.raises(PersonaError, match="temperature.*must be a number"):
+        Persona.from_dict(raw, id="bad-temp")
+
+
+def test_temperature_rejects_bool():
+    raw = persona_payload()
+    raw["llm"]["temperature"] = True
+
+    with pytest.raises(PersonaError, match="temperature.*must be a number"):
+        Persona.from_dict(raw, id="bool-temp")
+
+
+def test_opening_messages_validated_as_role_content_objects():
+    raw = persona_payload()
+    raw["persona"]["opening_messages"] = [{"role": "system"}]  # missing content
+
+    with pytest.raises(PersonaError, match="opening_messages"):
+        Persona.from_dict(raw, id="bad-opening")
+
+
+def test_opening_messages_rejects_non_list():
+    raw = persona_payload()
+    raw["persona"]["opening_messages"] = "Start."
+
+    with pytest.raises(PersonaError, match="opening_messages.*must be a list"):
+        Persona.from_dict(raw, id="bad-opening-type")
+
+
 def test_load_persona_reads_from_configured_directory(tmp_path, monkeypatch):
     persona_file = tmp_path / "test_agent.json"
     persona_file.write_text(json.dumps(persona_payload()), encoding="utf-8")
