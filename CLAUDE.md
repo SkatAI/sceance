@@ -75,13 +75,21 @@ Wiring:
 - Frontend uses `@supabase/supabase-js` from ESM CDN; the page fetches `/api/config` for public Supabase URL + anon key (and `open_signup`), then drives the flow above and persists the session in `localStorage`.
 
 ## Deployment
-Build section in CLAUDE.md\n\nAfter modifying frontend/dashboard assets or persona params, rebuild the Docker image (don't assume hot-reload) and re-run tests, since stale containers and positional-arg shifts have repeatedly broken deploys.
 
-## Debugging & Logs section in CLAUDE.md
+After modifying frontend/dashboard assets or persona params, rebuild the Docker image (don't assume hot-reload) and re-run tests, since stale containers and positional-arg shifts have repeatedly broken deploys.
+
+## Debugging & Logs
+
 Prefer parsing captured log files over querying the database when a log file already contains the answer; only hit the DB to cross-check.
-## Conventions section in CLAUDE.md
-Use './docs' (the local project folder) not '~/docs', and when backfilling unknown historical values use 'unknown' rather than 'local'.
-## Personas / Models section in CLAUDE.md
-Always verify model IDs are still available on the provider (e.g., Groq) before setting them in persona configs, as removed models like mistral-saba-24b have caused failures.
-## Recaps section in CLAUDE.md
+
+## Conventions
+
+Use `./docs` (the local project folder) not `~/docs`, and when backfilling unknown historical values use `unknown` rather than `local`.
+
+## Personas / Models
+
+Always verify model IDs are still available on the provider (e.g., Groq) before setting them in persona configs, as removed models like `mistral-saba-24b` have caused failures.
+
+## Recaps
+
 When asked for a session/work recap, recap ALL sessions across worktrees, not just the current chat window.
