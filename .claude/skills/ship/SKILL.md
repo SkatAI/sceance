@@ -34,7 +34,9 @@ Run these in order. Stop and report if any step fails — never push on red.
 7. **Verify** — watch the rollout with `make prod-logs` (=
    `doctl apps logs seal-app sceance --type run --follow`); confirm `/health`
    and the new behavior once live.
-8. Switch back to the working branch (`git checkout <branch>`).
+8. Return to `main` (home base). If the working branch was just fast-forward
+   merged into `main`, it's now a stale feature branch — don't checkout back to
+   it. Only stay on a feature branch if it still has unmerged work.
 
 ## Report
 
