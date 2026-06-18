@@ -7,5 +7,24 @@
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
     "supabase@claude-plugins-official": true
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": [
+              "-c",
+              "import json,sys,subprocess; d=json.loads(sys.stdin.read() or '{}'); f=(d.get('tool_input',{}) or {}).get('file_path','') or ''; sys.exit(2 if (f.endswith('.py') and '/server/' in f) and subprocess.run(['uv','run','python','-m','py_compile',f], cwd=f.split('/server/')[0]+'/server').returncode else 0)"
+            ],
+            "timeout": 30,
+            "statusMessage": "Compile-checking edited server file"
+          }
+        ]
+      }
+    ]
   }
 }
