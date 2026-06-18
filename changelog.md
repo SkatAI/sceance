@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-06-18 — Split latency collector / report / repository (refactor Task 12)
+
+- `latency.py` held three concerns in one module: deterministic SQL + arithmetic,
+  the LLM synthesis call, and the DB upsert. Split into `latency_collector.py`
+  (`_quantile` / `_pearson` / `_build_turns` / `collect_latency_bundle` + the
+  heuristic thresholds), `latency_report.py` (`_SYNTH_SYSTEM` prompt + `SYNTH_MODEL`
+  + `synthesize_latency_report`), and `latency_repository.py` (`upsert_latency_analysis`
+  / `load_latency_analysis`, owning the jsonb decode + timestamp shaping). `latency.py`
+  is now a thin facade: `generate_and_store` chains the three, and it re-exports the
+  pieces. The LLM prompt is byte-for-byte unchanged.
+- The admin session-detail route no longer parses stored latency JSON inline — it
+  calls `load_latency_analysis(pool, sid)` — and imports `_quantile` from the
+  collector. Added first dedicated latency tests: `_pearson`, `_build_turns` (intro
+  detection, duplicate-bot-start skip, full + tail stall flagging), `collect_latency_bundle`
+  stats + cause tagging + correlation verdict + missing-session error, and the
+  repository load-mapping (jsonb-as-string decode, None passthrough).
+
 ## 2026-06-18 — Share Anthropic JSON synthesis helpers (refactor Task 11)
 
 - `memory.py` and `latency.py` each carried their own copy of the same two

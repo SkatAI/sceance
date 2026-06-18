@@ -14,7 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from auth import CurrentUser, require_admin
 from deps import get_pool
-from latency import _quantile, generate_and_store
+from latency import generate_and_store
+from latency_collector import _quantile
+from latency_repository import load_latency_analysis
 from personas import Persona, PersonaError
 
 router = APIRouter()
@@ -223,24 +225,9 @@ async def api_session_detail(
             """,
             sid,
         )
-        # Stored latency analysis (if generated before), loaded with the page.
-        la = await conn.fetchrow(
-            """
-            SELECT bundle, report, has_unexplained, model, generated_at
-            FROM session_latency_analysis WHERE session_id = $1
-            """,
-            sid,
-        )
 
-    latency_analysis = None
-    if la is not None:
-        latency_analysis = {
-            "bundle": json.loads(la["bundle"]) if isinstance(la["bundle"], str) else la["bundle"],
-            "report": json.loads(la["report"]) if isinstance(la["report"], str) else la["report"],
-            "has_unexplained": la["has_unexplained"],
-            "model": la["model"],
-            "generated_at": _iso(la["generated_at"]),
-        }
+    # Stored latency analysis (if generated before), loaded with the page.
+    latency_analysis = await load_latency_analysis(pool, sid)
 
     # Per-turn user→bot response latency.
     latencies = _pair_response_latencies([dict(r) for r in turn_events])
