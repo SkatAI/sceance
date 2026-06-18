@@ -138,6 +138,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   outline: none;
   border-color: var(--accent);
 }
+.auth-form .hint { color: var(--muted); font-size: 0.8rem; line-height: 1.5; margin: -0.2rem 0 0; }
 
 .agents {
   display: flex;

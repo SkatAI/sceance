@@ -26,12 +26,25 @@
     </p>
 
     <form id="auth-form" class="auth-form hidden">
-      <p class="intro">Enter your email to sign in or create an account.</p>
+      <p class="intro">
+        Sceance is in private beta. Sign in with your email, or enter an invite
+        code to create an account.
+      </p>
       <label>
         <span>Email</span>
         <input id="auth-email-input" type="email" required autocomplete="email"
                placeholder="you@example.com" />
       </label>
+      <label>
+        <span>Invite code</span>
+        <input id="auth-invite-input" type="text" autocomplete="off"
+               autocapitalize="off" autocorrect="off" spellcheck="false"
+               placeholder="optional" />
+      </label>
+      <p class="hint">
+        Have an invite code? Enter it to join now. No code? Leave it blank to
+        join the beta waitlist.
+      </p>
       <button id="auth-submit" type="submit" class="primary">Connect</button>
       <div id="auth-status" class="status idle"></div>
     </form>

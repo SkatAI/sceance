@@ -20,6 +20,14 @@ class UserConnection:
         return self.row
 
 
+class ExecConnection:
+    def __init__(self):
+        self.calls = []
+
+    async def execute(self, query, *args):
+        self.calls.append((query, args))
+
+
 class FakeResponse:
     def __init__(self, data=None, status_code=200, text=""):
         self._data = data or {}
@@ -59,6 +67,42 @@ def test_user_exists_queries_auth_users_case_insensitively():
 
 def test_user_exists_returns_false_when_no_row():
     assert asyncio.run(supabase_admin.user_exists(FakePool(UserConnection(None)), "a@example.com")) is False
+
+
+def test_normalize_invite_code_lowercases_trims_and_strips_unsafe():
+    assert supabase_admin.normalize_invite_code("  INIGO ") == "inigo"
+    assert supabase_admin.normalize_invite_code("in-i go!") == "inigo"
+    assert supabase_admin.normalize_invite_code("") == ""
+
+
+def test_redeem_invite_code_consumes_when_row_returned():
+    connection = UserConnection({"code": "inigo"})
+
+    assert asyncio.run(supabase_admin.redeem_invite_code(FakePool(connection), "  INIGO ")) is True
+    query, args = connection.calls[0]
+    assert "used_count < max_uses" in query and "expires_at > now()" in query
+    assert args == ("inigo",)  # normalized before the query
+
+
+def test_redeem_invite_code_returns_false_when_no_row():
+    assert asyncio.run(supabase_admin.redeem_invite_code(FakePool(UserConnection(None)), "inigo")) is False
+
+
+def test_redeem_invite_code_short_circuits_blank_code():
+    connection = UserConnection({"code": "x"})
+
+    assert asyncio.run(supabase_admin.redeem_invite_code(FakePool(connection), "  !! ")) is False
+    assert connection.calls == []  # never touched the DB
+
+
+def test_add_to_waitlist_inserts_idempotently():
+    connection = ExecConnection()
+
+    asyncio.run(supabase_admin.add_to_waitlist(FakePool(connection), "a@example.com"))
+
+    query, args = connection.calls[0]
+    assert "INSERT INTO public.waitlist" in query and "ON CONFLICT" in query
+    assert args == ("a@example.com",)
 
 
 def test_create_user_posts_preconfirmed_user(monkeypatch):

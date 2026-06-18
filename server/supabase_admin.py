@@ -22,12 +22,23 @@ must never be exposed to the browser — it lives only here, server-side.
 
 from __future__ import annotations
 
+import re
+
 import asyncpg
 import httpx
 from fastapi import HTTPException
 from loguru import logger
 
 from settings import get_settings
+
+# Invite codes are short and case-insensitive; normalize before matching so the
+# stored value and the user's input always line up.
+_UNSAFE_CODE_CHARS = re.compile(r"[^a-z0-9]")
+
+
+def normalize_invite_code(code: str) -> str:
+    """Lowercase, trim, and strip to a safe charset (a-z0-9)."""
+    return _UNSAFE_CODE_CHARS.sub("", (code or "").strip().lower())
 
 
 def _auth_base() -> str:
@@ -56,6 +67,38 @@ async def user_exists(pool: asyncpg.Pool, email: str) -> bool:
             email,
         )
     return row is not None
+
+
+async def redeem_invite_code(pool: asyncpg.Pool, code: str) -> bool:
+    """Atomically consume one use of an invite code.
+
+    Returns True iff the (normalized) code exists, hasn't expired, and still has
+    uses left — incrementing `used_count` in the same statement so concurrent
+    signups can't push it past `max_uses`. Blank codes never hit the DB.
+    """
+    code = normalize_invite_code(code)
+    if not code:
+        return False
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            UPDATE public.invite_codes
+               SET used_count = used_count + 1
+             WHERE code = $1 AND used_count < max_uses AND expires_at > now()
+            RETURNING code
+            """,
+            code,
+        )
+    return row is not None
+
+
+async def add_to_waitlist(pool: asyncpg.Pool, email: str) -> None:
+    """Record a beta-waitlist signup (idempotent on email)."""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO public.waitlist (email) VALUES ($1) ON CONFLICT (email) DO NOTHING",
+            email,
+        )
 
 
 async def create_user(client: httpx.AsyncClient, email: str) -> None:

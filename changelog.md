@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-06-18 — Invite-code gated signup + beta waitlist
+
+- Logged-out landing page now shows an optional **invite code** field alongside
+  email, with private-beta copy. New behaviour in `POST /api/auth/login`:
+  existing emails log in as before; a new email with a **valid invite code**
+  creates a pre-confirmed account and logs in immediately (still no email sent);
+  a new email with **no code** is added to a beta waitlist (`202 waitlisted`); a
+  bad/expired/exhausted code is rejected (`400 invalid_invite`). The old
+  `OPEN_SIGNUP` auto-create branch is removed — an invite code is now the only
+  way for a new user to get in.
+- Migration `006_invites.sql` adds `public.invite_codes` (code PK, `max_uses`
+  default 5, `used_count`, `expires_at` default now()+3 days) and
+  `public.waitlist` (email PK). Codes are managed manually in Supabase; seeds the
+  first code `inigo`. Apply with
+  `psql "$SUPABASE_DB_URL" -f server/migrations/006_invites.sql`.
+- `supabase_admin.py` gains `normalize_invite_code` (lowercase/trim/strip to
+  `[a-z0-9]`), `redeem_invite_code` (atomic increment guarded by `used_count <
+  max_uses` and expiry, so concurrent signups can't over-redeem), and
+  `add_to_waitlist` (idempotent). Tests cover the helpers and all login branches.
+
 ## 2026-06-18 — Route smoke tests for wiring (refactor Task 19)
 
 - Added `test_route_smoke.py`: FastAPI-level tests via `TestClient` that prove

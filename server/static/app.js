@@ -16,6 +16,7 @@ const statusEl = document.getElementById("status");
 const authForm = document.getElementById("auth-form");
 const authLoggedIn = document.getElementById("auth-logged-in");
 const authEmailInput = document.getElementById("auth-email-input");
+const authInviteInput = document.getElementById("auth-invite-input");
 const authSubmitBtn = document.getElementById("auth-submit");
 const authStatusEl = document.getElementById("auth-status");
 const authUsernameEl = document.getElementById("auth-username");
@@ -288,14 +289,36 @@ authForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const email = authEmailInput.value.trim();
   if (!email) return;
+  const inviteCode = authInviteInput.value.trim();
   authSubmitBtn.disabled = true;
   setAuthStatus("connecting…", "connecting");
   try {
     const r = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, invite_code: inviteCode }),
     });
+    if (r.status === 202) {
+      setAuthStatus(
+        "You're on the beta waitlist — we'll be in touch.",
+        "idle",
+      );
+      authInviteInput.value = "";
+      return;
+    }
+    if (r.status === 400) {
+      let detail = "invalid_email";
+      try { detail = (await r.json()).detail || detail; } catch (_) {}
+      setAuthStatus(
+        detail === "invalid_invite"
+          ? "That invite code is invalid or expired."
+          : detail === "invalid_email"
+          ? "that email looks off"
+          : detail,
+        "error",
+      );
+      return;
+    }
     if (r.status === 403) {
       setAuthStatus(
         "This is a private beta. Contact the website owner for an invite.",
@@ -306,7 +329,7 @@ authForm.addEventListener("submit", async (e) => {
     if (!r.ok) {
       let detail = `error (${r.status})`;
       try { detail = (await r.json()).detail || detail; } catch (_) {}
-      setAuthStatus(detail === "invalid_email" ? "that email looks off" : detail, "error");
+      setAuthStatus(detail, "error");
       return;
     }
     const { token_hash, type } = await r.json();
