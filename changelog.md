@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-06-18 — Extract dashboard query repository (refactor Task 13)
+
+- The admin routes (`/api/aggregate`, `/api/sessions`, `/api/sessions/{id}`) held
+  their SQL and row→JSON shaping inline. Moved it into a new
+  `dashboard_repository.py`: `aggregate(pool, days)`, `list_sessions(...)` (with a
+  testable `_session_filter` that builds the shared WHERE clause), and
+  `fetch_session_detail(...)`. The route handlers now validate params and call the
+  repository; `api_session_detail` still assembles the detail page's derived bits
+  (persona projection — left for Task 14 — and per-turn response latency) from the
+  raw `persona_json` / `turn_events` the repository returns alongside the shaped
+  fields. Dynamic SQL stays parameterized — only fixed column names are
+  interpolated; user values go through `$n` placeholders.
+- Added `test_dashboard_repository.py`: `_session_filter` for persona-only,
+  environment-only, both, and no filters; `list_sessions` arg ordering proving no
+  raw interpolation; and aggregate / session-detail shaping. Existing
+  through-the-route admin tests still pass unchanged.
+
 ## 2026-06-18 — Split latency collector / report / repository (refactor Task 12)
 
 - `latency.py` held three concerns in one module: deterministic SQL + arithmetic,
