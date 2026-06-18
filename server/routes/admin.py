@@ -1,13 +1,12 @@
 """Admin dashboard routes: aggregate stats, session list/detail, latency analysis.
 
-SQL + row→JSON shaping live in `dashboard_repository`; these handlers validate
-params and assemble the detail page's derived bits (persona projection — Task 14
-will move it out — and per-turn response latency).
+SQL + row→JSON shaping live in `dashboard_repository`, persona snapshot
+projection in `persona_snapshot`; these handlers validate params and assemble the
+detail page's derived bits (persona view + per-turn response latency).
 """
 
 from __future__ import annotations
 
-import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,7 +17,7 @@ from deps import get_pool
 from latency import generate_and_store
 from latency_collector import _quantile
 from latency_repository import load_latency_analysis
-from personas import Persona, PersonaError
+from persona_snapshot import project_persona_snapshot
 
 router = APIRouter()
 
@@ -80,31 +79,6 @@ def _response_latency(turn_events: list[dict]) -> dict:
     }
 
 
-def _project_persona(persona_json):
-    """Persona snapshot view for the detail page (Task 14 will move this out)."""
-    persona = persona_json
-    if isinstance(persona, str):
-        persona = json.loads(persona)
-    if not isinstance(persona, dict):
-        return None
-    try:
-        p = Persona.from_dict(persona)
-    except PersonaError:
-        # Legacy/flat snapshot from before the nested schema — return as-is.
-        return persona
-    return {
-        "name": p.name,
-        "lang": p.lang,
-        "llm_model": p.llm_model,
-        "llm": p.llm_description,
-        "tts_provider": p.tts_provider,
-        "tts_voice_id": p.voice_id,
-        "voice_name": p.voice_name,
-        "voice_description": p.voice_description,
-        "description": p.description,
-    }
-
-
 @router.get("/api/sessions/{session_id}")
 async def api_session_detail(
     session_id: str,
@@ -121,7 +95,7 @@ async def api_session_detail(
 
     turn_events = detail.pop("turn_events")
     persona_json = detail.pop("persona_json")
-    detail["persona"] = _project_persona(persona_json)
+    detail["persona"] = project_persona_snapshot(persona_json)
     detail["response_latency"] = _response_latency(turn_events)
     # Stored latency analysis (if generated before), loaded with the page.
     detail["latency_analysis"] = await load_latency_analysis(pool, sid)

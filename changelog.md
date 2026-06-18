@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-06-18 — Normalize session-detail persona projection (refactor Task 14)
+
+- `api_session_detail` parsed the stored `persona_json` snapshot inline (decode if
+  string, try `Persona.from_dict`, fall back to legacy dicts). Extracted it into
+  `persona_snapshot.project_persona_snapshot(persona_json)`, handling nested dict,
+  JSON string, malformed legacy dict, malformed JSON string, and None/non-dict
+  uniformly. The route now has no persona-parsing branches. Minor hardening: a
+  malformed JSON *string* now returns None instead of raising (the route would
+  previously have 500'd). Added `test_persona_snapshot.py` for all five input
+  shapes.
+
 ## 2026-06-18 — Extract dashboard query repository (refactor Task 13)
 
 - The admin routes (`/api/aggregate`, `/api/sessions`, `/api/sessions/{id}`) held
