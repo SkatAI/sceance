@@ -3,7 +3,8 @@
   "agent": {
     "active": false,
     "lang": "fr",
-    "memory": true
+    "memory": true,
+    "visibility": "admin"
   },
   "persona": {
     "name": "Inigo Sonnet",

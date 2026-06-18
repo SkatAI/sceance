@@ -140,6 +140,14 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .auth-form .hint { color: var(--muted); font-size: 0.8rem; line-height: 1.5; margin: -0.2rem 0 0; }
 
+.auth-waitlist {
+  font-size: 1.5rem;
+  line-height: 1.5;
+  color: var(--text);
+  text-align: center;
+  padding: 2.5rem 1rem;
+}
+
 .agents {
   display: flex;
   flex-direction: row;

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse, RedirectResponse
 from loguru import logger
 
 import session_tasks
+from auth import CurrentUser, get_current_user_optional
 from personas import Persona, PersonaError
 from settings import get_settings
 
@@ -45,7 +46,8 @@ async def session_page(session_id: str):
 
 
 @router.get("/agents")
-async def list_agents():
+async def list_agents(user: CurrentUser | None = Depends(get_current_user_optional)):
+    is_admin = bool(user and user.is_admin)
     agents = []
     for path in sorted(get_settings().personas_dir.glob("*.json")):
         try:
@@ -56,6 +58,8 @@ async def list_agents():
             logger.warning(f"Skipping persona {path.name}: {e}")
             continue
         if not persona.active:
+            continue
+        if persona.visibility == "admin" and not is_admin:
             continue
         agents.append(persona.public())
     return {"agents": agents}

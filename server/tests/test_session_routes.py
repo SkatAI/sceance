@@ -30,6 +30,21 @@ def test_start_session_rejects_missing_and_unknown_agent(tmp_path, monkeypatch):
     assert unknown.value.detail == "agent_not_found"
 
 
+def test_start_session_rejects_admin_agent_for_non_admin(tmp_path, monkeypatch):
+    payload = persona_payload()
+    payload["agent"]["visibility"] = "admin"
+    (tmp_path / "secret.json").write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(get_settings(), "personas_dir", tmp_path)
+    monkeypatch.setattr(get_settings(), "max_sessions", 5)
+    user = CurrentUser(id=str(uuid4()), email="a@example.com", username="a", is_admin=False)
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(sessions.start_session(sessions.StartSessionBody(agent="secret"), None, user))
+
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "admin_only"
+
+
 def test_start_session_rejects_busy_and_missing_daily_key(tmp_path, monkeypatch):
     (tmp_path / "agent.json").write_text(json.dumps(persona_payload()), encoding="utf-8")
     monkeypatch.setattr(get_settings(), "personas_dir", tmp_path)

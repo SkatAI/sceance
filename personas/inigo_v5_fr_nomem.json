@@ -3,7 +3,8 @@
   "agent": {
     "active": true,
     "lang": "fr",
-    "memory": false
+    "memory": false,
+    "visibility": "public"
   },
   "persona": {
     "name": "Leo",

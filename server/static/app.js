@@ -17,6 +17,7 @@ const authForm = document.getElementById("auth-form");
 const authLoggedIn = document.getElementById("auth-logged-in");
 const authEmailInput = document.getElementById("auth-email-input");
 const authInviteInput = document.getElementById("auth-invite-input");
+const authWaitlistEl = document.getElementById("auth-waitlist");
 const authSubmitBtn = document.getElementById("auth-submit");
 const authStatusEl = document.getElementById("auth-status");
 const authUsernameEl = document.getElementById("auth-username");
@@ -60,7 +61,11 @@ function setAgentButtonsDisabled(disabled) {
 
 async function loadAgents() {
   try {
-    const r = await fetch("/agents");
+    // Send the access token so the server can include admin-only agents for
+    // admins; anonymous/non-admin callers get only public ones.
+    const { data: { session } } = await supabase.auth.getSession();
+    const headers = session ? { "Authorization": `Bearer ${session.access_token}` } : {};
+    const r = await fetch("/agents", { headers });
     if (!r.ok) throw new Error(`status ${r.status}`);
     const { agents } = await r.json();
     renderAgents(agents);
@@ -270,6 +275,7 @@ async function fetchMe(session) {
 
 function renderAuthState(me) {
   currentUser = me;
+  authWaitlistEl.classList.add("hidden");
   if (me) {
     authForm.classList.add("hidden");
     authLoggedIn.classList.remove("hidden");
@@ -285,6 +291,23 @@ function renderAuthState(me) {
   }
 }
 
+// Replace the whole sign-in form with a prominent waitlist confirmation.
+function showWaitlist({ already, invalid_code }) {
+  let msg;
+  if (invalid_code) {
+    msg = already
+      ? "That invite code isn't valid. You're already on the beta waitlist — we'll be in touch."
+      : "That invite code isn't valid, but you've joined the beta waitlist — we'll be in touch.";
+  } else {
+    msg = already
+      ? "You're already on the beta waitlist — we'll be in touch."
+      : "You're on the beta waitlist — we'll be in touch.";
+  }
+  authWaitlistEl.textContent = msg;
+  authForm.classList.add("hidden");
+  authWaitlistEl.classList.remove("hidden");
+}
+
 authForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const email = authEmailInput.value.trim();
@@ -298,25 +321,10 @@ authForm.addEventListener("submit", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, invite_code: inviteCode }),
     });
-    if (r.status === 202) {
-      setAuthStatus(
-        "You're on the beta waitlist — we'll be in touch.",
-        "idle",
-      );
-      authInviteInput.value = "";
-      return;
-    }
     if (r.status === 400) {
       let detail = "invalid_email";
       try { detail = (await r.json()).detail || detail; } catch (_) {}
-      setAuthStatus(
-        detail === "invalid_invite"
-          ? "That invite code is invalid or expired."
-          : detail === "invalid_email"
-          ? "that email looks off"
-          : detail,
-        "error",
-      );
+      setAuthStatus(detail === "invalid_email" ? "that email looks off" : detail, "error");
       return;
     }
     if (r.status === 403) {
@@ -332,7 +340,12 @@ authForm.addEventListener("submit", async (e) => {
       setAuthStatus(detail, "error");
       return;
     }
-    const { token_hash, type } = await r.json();
+    const data = await r.json();
+    if (data.status === "waitlisted") {
+      showWaitlist(data);
+      return;
+    }
+    const { token_hash, type } = data;
     const { error } = await supabase.auth.verifyOtp({ token_hash, type });
     if (error) {
       setAuthStatus(error.message, "error");

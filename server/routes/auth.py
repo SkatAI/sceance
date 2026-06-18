@@ -33,11 +33,13 @@ class LoginBody(BaseModel):
 async def api_auth_login(body: LoginBody, pool=Depends(get_pool)):
     """Passwordless sign-in by email — no magic-link email is sent.
 
-    Returns a one-time `token_hash` the browser redeems with verifyOtp.
+    Returns `{status: "ok", token_hash, type}` the browser redeems with verifyOtp.
 
     New emails are gated by an invite code: a valid code creates the account and
-    logs in immediately; no code adds the email to the beta waitlist (202); a
-    bad/expired/exhausted code is rejected (400) so the user can retry.
+    logs in immediately. Otherwise the email joins the beta waitlist and the
+    response reports `{status: "waitlisted", already, invalid_code}` — `already`
+    if the email was on the list, `invalid_code` if a code was given but didn't
+    work (so the page can say "that code wasn't valid, but you're on the list").
     """
     email = (body.email or "").strip().lower()
     if "@" not in email or len(email) < 3:
@@ -46,21 +48,21 @@ async def api_auth_login(body: LoginBody, pool=Depends(get_pool)):
         raise HTTPException(status_code=500, detail="auth_admin_not_configured")
 
     if not await user_exists(pool, email):
-        if not (body.invite_code or "").strip():
-            await add_to_waitlist(pool, email)
-            raise HTTPException(status_code=202, detail="waitlisted")
-        if not await redeem_invite_code(pool, body.invite_code):
-            raise HTTPException(status_code=400, detail="invalid_invite")
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            await create_user(client, email)
-            return {
-                "token_hash": await generate_magiclink_token(client, email),
-                "type": "magiclink",
-            }
+        code = (body.invite_code or "").strip()
+        if code and await redeem_invite_code(pool, body.invite_code):
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                await create_user(client, email)
+                return {
+                    "status": "ok",
+                    "token_hash": await generate_magiclink_token(client, email),
+                    "type": "magiclink",
+                }
+        added = await add_to_waitlist(pool, email)
+        return {"status": "waitlisted", "already": not added, "invalid_code": bool(code)}
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         token_hash = await generate_magiclink_token(client, email)
-    return {"token_hash": token_hash, "type": "magiclink"}
+    return {"status": "ok", "token_hash": token_hash, "type": "magiclink"}
 
 
 @router.get("/api/me")

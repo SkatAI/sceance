@@ -20,7 +20,7 @@ def test_api_me_projects_current_user():
     }
 
 
-def _patch_login(monkeypatch, *, exists, redeem=True):
+def _patch_login(monkeypatch, *, exists, redeem=True, waitlist_added=True):
     """Stub the supabase_admin helpers the login route calls, recording activity."""
     calls = {"created": [], "waitlisted": [], "redeemed": []}
 
@@ -33,6 +33,7 @@ def _patch_login(monkeypatch, *, exists, redeem=True):
 
     async def fake_waitlist(pool, email):
         calls["waitlisted"].append(email)
+        return waitlist_added
 
     async def fake_create_user(client, email):
         calls["created"].append(email)
@@ -54,7 +55,7 @@ def test_login_existing_user_returns_token(monkeypatch):
 
     result = asyncio.run(auth_routes.api_auth_login(auth_routes.LoginBody(email="A@Example.com"), pool=None))
 
-    assert result == {"token_hash": "tok", "type": "magiclink"}
+    assert result == {"status": "ok", "token_hash": "tok", "type": "magiclink"}
     assert calls["created"] == []  # existing users are never (re)created
 
 
@@ -67,37 +68,42 @@ def test_login_new_user_with_valid_code_creates_and_logs_in(monkeypatch):
         )
     )
 
-    assert result == {"token_hash": "tok", "type": "magiclink"}
+    assert result == {"status": "ok", "token_hash": "tok", "type": "magiclink"}
     assert calls["created"] == ["new@example.com"]
     assert calls["redeemed"] == ["inigo"]
+    assert calls["waitlisted"] == []
 
 
 def test_login_new_user_without_code_is_waitlisted(monkeypatch):
     calls = _patch_login(monkeypatch, exists=False)
 
-    with pytest.raises(HTTPException) as exc:
-        asyncio.run(auth_routes.api_auth_login(auth_routes.LoginBody(email="new@example.com"), pool=None))
+    result = asyncio.run(auth_routes.api_auth_login(auth_routes.LoginBody(email="new@example.com"), pool=None))
 
-    assert exc.value.status_code == 202
-    assert exc.value.detail == "waitlisted"
+    assert result == {"status": "waitlisted", "already": False, "invalid_code": False}
     assert calls["waitlisted"] == ["new@example.com"]
     assert calls["created"] == []
 
 
-def test_login_new_user_with_bad_code_is_rejected(monkeypatch):
+def test_login_already_on_waitlist_reports_already(monkeypatch):
+    _patch_login(monkeypatch, exists=False, waitlist_added=False)
+
+    result = asyncio.run(auth_routes.api_auth_login(auth_routes.LoginBody(email="new@example.com"), pool=None))
+
+    assert result == {"status": "waitlisted", "already": True, "invalid_code": False}
+
+
+def test_login_new_user_with_bad_code_is_waitlisted_and_flagged(monkeypatch):
     calls = _patch_login(monkeypatch, exists=False, redeem=False)
 
-    with pytest.raises(HTTPException) as exc:
-        asyncio.run(
-            auth_routes.api_auth_login(
-                auth_routes.LoginBody(email="new@example.com", invite_code="nope"), pool=None
-            )
+    result = asyncio.run(
+        auth_routes.api_auth_login(
+            auth_routes.LoginBody(email="new@example.com", invite_code="nope"), pool=None
         )
+    )
 
-    assert exc.value.status_code == 400
-    assert exc.value.detail == "invalid_invite"
+    assert result == {"status": "waitlisted", "already": False, "invalid_code": True}
     assert calls["created"] == []
-    assert calls["waitlisted"] == []
+    assert calls["waitlisted"] == ["new@example.com"]
 
 
 def test_login_rejects_malformed_email(monkeypatch):

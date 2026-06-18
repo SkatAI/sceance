@@ -1,15 +1,31 @@
 # Changelog
 
+## 2026-06-18 — Per-agent visibility (public vs admin-only)
+
+- Persona `agent` section gains a `visibility` key (`"public"` | `"admin"`,
+  default `"public"`; validated in `AgentConfig`). Admin-only agents are listed
+  on the séance page only for admin users; public agents show for everyone.
+  Active-only listing still applies.
+- Enforced server-side, not just hidden in the UI: `/agents` now takes an
+  optional auth (new `get_current_user_optional` in `auth.py`) and omits
+  admin-only personas for anonymous/non-admin callers; `/start-session` rejects
+  starting an admin-only agent for non-admins (`403 admin_only`). The landing
+  page sends its access token with the `/agents` request so admins get the full
+  list.
+
 ## 2026-06-18 — Invite-code gated signup + beta waitlist
 
 - Logged-out landing page now shows an optional **invite code** field alongside
   email, with private-beta copy. New behaviour in `POST /api/auth/login`:
   existing emails log in as before; a new email with a **valid invite code**
   creates a pre-confirmed account and logs in immediately (still no email sent);
-  a new email with **no code** is added to a beta waitlist (`202 waitlisted`); a
-  bad/expired/exhausted code is rejected (`400 invalid_invite`). The old
-  `OPEN_SIGNUP` auto-create branch is removed — an invite code is now the only
-  way for a new user to get in.
+  any other new email joins the beta waitlist. The response reports
+  `{status: "waitlisted", already, invalid_code}` so the page can show the right
+  message — newly added, already on the list, or "that code wasn't valid, but
+  you've joined the waitlist" (an invalid/expired/exhausted code now waitlists
+  instead of erroring). On waitlisting, the page replaces the whole sign-in form
+  with a large confirmation message. The old `OPEN_SIGNUP` auto-create branch is
+  removed — an invite code is now the only way for a new user to get in.
 - Migration `006_invites.sql` adds `public.invite_codes` (code PK, `max_uses`
   default 5, `used_count`, `expires_at` default now()+3 days) and
   `public.waitlist` (email PK). Codes are managed manually in Supabase; seeds the

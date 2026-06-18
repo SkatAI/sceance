@@ -38,6 +38,21 @@ def persona_payload(**overrides):
     return payload
 
 
+def test_visibility_defaults_to_public_and_parses_admin():
+    assert Persona.from_dict(persona_payload(), id="marie").visibility == "public"
+
+    admin = persona_payload()
+    admin["agent"]["visibility"] = "ADMIN"  # normalized to lowercase
+    assert Persona.from_dict(admin, id="marie").visibility == "admin"
+
+
+def test_invalid_visibility_raises():
+    bad = persona_payload()
+    bad["agent"]["visibility"] = "secret"
+    with pytest.raises(PersonaError, match="visibility"):
+        Persona.from_dict(bad, id="marie")
+
+
 def test_from_dict_normalizes_provider_names_and_keeps_public_subset():
     persona = Persona.from_dict(persona_payload(), id="marie")
 

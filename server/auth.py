@@ -111,6 +111,20 @@ async def get_current_user(
     )
 
 
+async def get_current_user_optional(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> CurrentUser | None:
+    """Like get_current_user, but returns None instead of raising when no/invalid
+    token is present — for routes that serve everyone but tailor by admin status."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return None
+    try:
+        return await get_current_user(request, authorization)
+    except HTTPException:
+        return None
+
+
 async def require_admin(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="admin_only")

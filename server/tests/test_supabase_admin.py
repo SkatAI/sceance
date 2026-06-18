@@ -20,14 +20,6 @@ class UserConnection:
         return self.row
 
 
-class ExecConnection:
-    def __init__(self):
-        self.calls = []
-
-    async def execute(self, query, *args):
-        self.calls.append((query, args))
-
-
 class FakeResponse:
     def __init__(self, data=None, status_code=200, text=""):
         self._data = data or {}
@@ -95,14 +87,17 @@ def test_redeem_invite_code_short_circuits_blank_code():
     assert connection.calls == []  # never touched the DB
 
 
-def test_add_to_waitlist_inserts_idempotently():
-    connection = ExecConnection()
+def test_add_to_waitlist_reports_newly_added():
+    connection = UserConnection({"email": "a@example.com"})
 
-    asyncio.run(supabase_admin.add_to_waitlist(FakePool(connection), "a@example.com"))
-
+    assert asyncio.run(supabase_admin.add_to_waitlist(FakePool(connection), "a@example.com")) is True
     query, args = connection.calls[0]
-    assert "INSERT INTO public.waitlist" in query and "ON CONFLICT" in query
+    assert "INSERT INTO public.waitlist" in query and "ON CONFLICT" in query and "RETURNING" in query
     assert args == ("a@example.com",)
+
+
+def test_add_to_waitlist_returns_false_when_already_present():
+    assert asyncio.run(supabase_admin.add_to_waitlist(FakePool(UserConnection(None)), "a@example.com")) is False
 
 
 def test_create_user_posts_preconfirmed_user(monkeypatch):

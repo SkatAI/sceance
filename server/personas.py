@@ -3,7 +3,7 @@
 Persona JSON is nested by concern (schema_version 2):
 
     {
-      "agent":   { "active": bool, "lang": "en" },
+      "agent":   { "active": bool, "lang": "en", "visibility": "public" | "admin" },
       "persona": { "name", "description",
                    "system_prompt" | "system_prompt_path",  # inline OR a .md file
                    "opening_messages", "page_intro"?, "cta"? },
@@ -107,13 +107,21 @@ class AgentConfig:
     active: bool
     lang: str
     memory: bool
+    visibility: str  # "public" (everyone) | "admin" (admin users only)
 
     @classmethod
-    def from_section(cls, agent: dict) -> "AgentConfig":
+    def from_section(cls, agent: dict, id: str) -> "AgentConfig":
+        visibility = str(agent.get("visibility") or "public").lower()
+        if visibility not in ("public", "admin"):
+            raise PersonaError(
+                f"persona {id!r}: 'agent.visibility' must be 'public' or "
+                f"'admin', got {visibility!r}"
+            )
         return cls(
             active=bool(agent.get("active", False)),
             lang=(agent.get("lang") or "en"),
             memory=bool(agent.get("memory", True)),  # absent → memory on
+            visibility=visibility,
         )
 
 
@@ -244,6 +252,10 @@ class Persona:
         return self.agent.memory
 
     @property
+    def visibility(self) -> str:
+        return self.agent.visibility
+
+    @property
     def name(self) -> str:
         return self.text.name
 
@@ -339,7 +351,7 @@ class Persona:
         return cls(
             id=id,
             raw=raw,
-            agent=AgentConfig.from_section(section("agent")),
+            agent=AgentConfig.from_section(section("agent"), id),
             text=PersonaTextConfig.from_section(section("persona"), id),
             llm=LLMConfig.from_section(section("llm"), id),
             tts=TTSConfig.from_section(section("tts"), id),

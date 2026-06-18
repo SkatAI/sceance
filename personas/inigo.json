@@ -3,7 +3,8 @@
   "agent": {
     "active": false,
     "lang": "en",
-    "memory": true
+    "memory": true,
+    "visibility": "public"
   },
   "persona": {
     "name": "Inigo Gpt",

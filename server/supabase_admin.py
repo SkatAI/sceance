@@ -92,13 +92,18 @@ async def redeem_invite_code(pool: asyncpg.Pool, code: str) -> bool:
     return row is not None
 
 
-async def add_to_waitlist(pool: asyncpg.Pool, email: str) -> None:
-    """Record a beta-waitlist signup (idempotent on email)."""
+async def add_to_waitlist(pool: asyncpg.Pool, email: str) -> bool:
+    """Record a beta-waitlist signup (idempotent on email).
+
+    Returns True if the email was newly added, False if it was already there.
+    """
     async with pool.acquire() as conn:
-        await conn.execute(
-            "INSERT INTO public.waitlist (email) VALUES ($1) ON CONFLICT (email) DO NOTHING",
+        row = await conn.fetchrow(
+            "INSERT INTO public.waitlist (email) VALUES ($1) "
+            "ON CONFLICT (email) DO NOTHING RETURNING email",
             email,
         )
+    return row is not None
 
 
 async def create_user(client: httpx.AsyncClient, email: str) -> None:
