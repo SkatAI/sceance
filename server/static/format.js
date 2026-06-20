@@ -39,6 +39,19 @@ export function fmtDate(iso) {
   });
 }
 
+export function fmtClock(iso) {
+  // Precise wall-clock time-of-day, to the millisecond. Used in the transcript
+  // to show when each turn was recorded — for an assistant turn this is the
+  // moment LLM text generation finished (recorded at LLMFullResponseEndFrame).
+  if (!iso) return null;
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  const ms = String(d.getMilliseconds()).padStart(3, "0");
+  return `${hh}:${mm}:${ss}.${ms}`;
+}
+
 export function shortProcessor(p) {
   // "AnthropicLLMService#0" -> "Anthropic LLM"
   if (!p) return "?";
@@ -70,12 +83,22 @@ export function renderDetail(s) {
 
   // transcript
   const turns = s.messages.length
-    ? s.messages.map(m => `
+    ? s.messages.map(m => {
+        const t = fmtClock(m.recorded_at);
+        // For assistant turns recorded_at is captured at LLMFullResponseEndFrame,
+        // i.e. when LLM text generation finished; for user turns it's when the
+        // final transcript was recorded.
+        const tTitle = m.role === "assistant"
+          ? "LLM text generation finished"
+          : "transcript recorded";
+        const ts = t ? `<span class="ts" title="${tTitle}">${t}</span>` : "";
+        return `
         <div class="turn ${m.role}">
-          <div class="who">${escapeHtml(m.role)}${m.language ? ` · ${escapeHtml(m.language)}` : ""}</div>
+          <div class="who"><span>${escapeHtml(m.role)}${m.language ? ` · ${escapeHtml(m.language)}` : ""}</span>${ts}</div>
           <div class="text">${escapeHtml(m.text)}</div>
         </div>
-      `).join("")
+      `;
+      }).join("")
     : `<div class="empty">No transcript recorded.</div>`;
 
   // metadata

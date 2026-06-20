@@ -435,6 +435,10 @@ a:hover { text-decoration: underline; }
   border-left: 2px solid var(--rule);
 }
 .transcript .turn .who {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
   font-family: var(--mono);
   font-weight: 500;
   font-size: 0.7rem;
@@ -442,6 +446,14 @@ a:hover { text-decoration: underline; }
   text-transform: uppercase;
   color: var(--text-3);
   margin-bottom: 0.25rem;
+}
+.transcript .turn .who .ts {
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .transcript .turn.user .who      { color: var(--blue); }
 .transcript .turn.assistant .who { color: var(--accent); }
