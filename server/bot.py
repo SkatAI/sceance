@@ -37,6 +37,8 @@ from pipecat.processors.aggregators.llm_response_universal import (
 )
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.tts_service import TextAggregationMode
+from pipecat.turns.user_start import MinWordsUserTurnStartStrategy
+from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.transports.base_transport import BaseTransport
 from pipecat.transports.daily.transport import DailyParams, DailyTransport
 
@@ -137,11 +139,26 @@ def build_stt(persona: Persona):
 
 
 def build_context_aggregators():
-    """LLM context plus its user/assistant aggregator pair (VAD on the user side)."""
+    """LLM context plus its user/assistant aggregator pair.
+
+    Turn-start / interruption is gated on a real transcript (MinWords) rather
+    than raw VAD energy. A contentless VAD blip (a breath/noise ~0.2s after the
+    user finished speaking) used to count as the user starting to speak again,
+    which cancelled the in-flight LLM turn and left nothing queued — ~13s of dead
+    air (online session e6ec5595). VAD still runs (it drives turn-stop timing and
+    feeds STT); it just no longer triggers an interruption on its own. Pre-TTS the
+    threshold is effectively 1 word, so normal turn-taking is unchanged; min_words
+    only applies while the bot is speaking (genuine barge-in). The stop strategy
+    is left at its default (stop=None)."""
     context = LLMContext()
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
-        user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
+        user_params=LLMUserAggregatorParams(
+            vad_analyzer=SileroVADAnalyzer(),
+            user_turn_strategies=UserTurnStrategies(
+                start=[MinWordsUserTurnStartStrategy(min_words=2)],
+            ),
+        ),
     )
     return context, user_aggregator, assistant_aggregator
 

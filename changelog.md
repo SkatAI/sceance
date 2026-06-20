@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-06-20 — Gate interruptions on a real transcript (fix dead-air after a turn)
+
+- **Behavior change:** the user-turn start / barge-in trigger is now
+  `MinWordsUserTurnStartStrategy` instead of pipecat's default raw-VAD strategy
+  (`build_context_aggregators` in `server/bot.py`). A contentless VAD blip
+  (breath/noise) can no longer start a turn, so it can no longer interrupt and
+  cancel an in-flight LLM response.
+- **Bug fixed:** online session `e6ec5595` went silent ~13s after "How are you
+  today?" — the sentence was transcribed and the LLM started replying, but a
+  ~0.2s VAD blip 0.16s into generation cancelled the run (`llm_start`→`llm_end`
+  in 219ms, no TTS), and since that blip produced no transcript nothing
+  re-queued a response. This is a **distinct failure mode from the Deepgram
+  stalled-socket bug** (the StallGuard can't catch it — a transcript does
+  arrive). VAD still runs (turn-stop timing + STT); it just no longer triggers
+  interruptions on its own. Pre-TTS the threshold is effectively 1 word so
+  normal turn-taking is unchanged; `min_words=2` applies only while the bot is
+  speaking. New tests: `server/tests/test_user_turn_strategy.py`.
+
+## 2026-06-20 — Per-turn timestamps in the session transcript
+
+- The session-detail Transcript now shows a precise wall-clock time
+  (`HH:MM:SS.mmm`) on each turn, from `messages.recorded_at`. For assistant
+  turns this `recorded_at` is captured at `LLMFullResponseEndFrame`, so it is
+  the moment **LLM text generation finished** (hover title clarifies user vs
+  assistant). Frontend-only — `recorded_at` was already served by
+  `GET /api/sessions/{id}`; rendered in `static/format.js` with `fmtClock()`
+  and styled in `dashboard.css`.
+
 ## 2026-06-18 — Per-agent visibility (public vs admin-only)
 
 - Persona `agent` section gains a `visibility` key (`"public"` | `"admin"`,
