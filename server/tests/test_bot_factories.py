@@ -162,46 +162,106 @@ def test_llm_and_tts_registries_list_supported_providers():
     assert set(providers.TTS_FACTORIES) == {"cartesia", "deepgram", "gradium"}
 
 
-def test_prewarm_llm_warms_the_shared_client_pool():
-    # prewarm should hit the service's own _client (the pool the pipeline reuses)
-    # with a cheap models.list() call.
+def test_prewarm_llm_fires_a_one_token_inference():
+    # prewarm should fire a throwaway run_inference with max_tokens=1 — this
+    # opens the pooled connection and (for Anthropic) primes the system-prompt
+    # cache, unlike a bare models.list().
     called = {}
 
-    class FakeModels:
-        async def list(self):
-            called["list"] = True
-
-    class FakeClient:
-        models = FakeModels()
-
     class FakeLLM:
-        _client = FakeClient()
+        async def run_inference(self, context, max_tokens=None, system_instruction=None):
+            called["max_tokens"] = max_tokens
+            called["context"] = context
+            return "x"
 
     asyncio.run(bot.prewarm_llm(FakeLLM()))
 
-    assert called.get("list") is True
+    assert called.get("max_tokens") == 1
+    # A real context with the throwaway user message was passed.
+    assert called.get("context") is not None
 
 
 def test_prewarm_llm_swallows_errors():
     # A prewarm failure must never break a session.
-    class FakeModels:
-        async def list(self):
-            raise RuntimeError("offline")
-
-    class FakeClient:
-        models = FakeModels()
-
     class FakeLLM:
-        _client = FakeClient()
+        async def run_inference(self, context, max_tokens=None, system_instruction=None):
+            raise RuntimeError("offline")
 
     asyncio.run(bot.prewarm_llm(FakeLLM()))  # must not raise
 
 
-def test_prewarm_llm_noop_without_client():
+def test_prewarm_llm_swallows_missing_method():
+    # An LLM without run_inference (e.g. SDK change) must not break the session.
     class FakeLLM:
         pass
 
-    asyncio.run(bot.prewarm_llm(FakeLLM()))  # no _client → no-op, no raise
+    asyncio.run(bot.prewarm_llm(FakeLLM()))  # AttributeError swallowed, no raise
+
+
+class _FakeKickoffContext:
+    def __init__(self):
+        self.messages = []
+
+    def add_message(self, message):
+        self.messages.append(message)
+
+
+class _FakeKickoffRecorder:
+    def __init__(self):
+        self.recorded = []
+
+    def record_message(self, role, text):
+        self.recorded.append({"role": role, "text": text})
+
+
+class _FakeKickoffTask:
+    def __init__(self):
+        self.queued = []
+
+    async def queue_frames(self, frames):
+        self.queued.extend(frames)
+
+
+def test_make_kickoff_speaks_static_greeting_without_llm_run():
+    # A persona with static_greeting produces turn zero as a TTSSpeakFrame — no
+    # LLMRunFrame, so no cold-start inference. The greeting is recorded, and the
+    # opening_messages are still seeded first (user-first ordering).
+    persona = make_persona(
+        persona={
+            "static_greeting": "Hi — I'm Sophie. What's your name?",
+            "opening_messages": [{"role": "user", "content": "Introduce yourself."}],
+        }
+    )
+    context, recorder, task = _FakeKickoffContext(), _FakeKickoffRecorder(), _FakeKickoffTask()
+
+    kickoff = bot.make_kickoff(task, context, recorder, persona, memory_brief=None)
+    asyncio.run(kickoff("test"))
+
+    assert context.messages == [
+        {"role": "user", "content": "Introduce yourself."},
+        {"role": "assistant", "content": "Hi — I'm Sophie. What's your name?"},
+    ]
+    assert {"role": "assistant", "text": "Hi — I'm Sophie. What's your name?"} in recorder.recorded
+    assert len(task.queued) == 1
+    assert isinstance(task.queued[0], bot.TTSSpeakFrame)
+    assert task.queued[0].text == "Hi — I'm Sophie. What's your name?"
+
+
+def test_make_kickoff_runs_llm_when_no_static_greeting():
+    # Without static_greeting the greeting stays dynamic: an LLMRunFrame is
+    # queued and no assistant message is pre-seeded.
+    persona = make_persona(
+        persona={"opening_messages": [{"role": "user", "content": "Introduce yourself."}]}
+    )
+    assert persona.static_greeting is None
+    context, recorder, task = _FakeKickoffContext(), _FakeKickoffRecorder(), _FakeKickoffTask()
+
+    kickoff = bot.make_kickoff(task, context, recorder, persona, memory_brief=None)
+    asyncio.run(kickoff("test"))
+
+    assert len(task.queued) == 1
+    assert isinstance(task.queued[0], bot.LLMRunFrame)
+    assert all(m["role"] != "assistant" for m in context.messages)
 
 
 def test_build_tts_creates_cartesia_service(monkeypatch):

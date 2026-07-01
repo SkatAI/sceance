@@ -26,7 +26,7 @@ import asyncio
 import asyncpg
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.frames.frames import LLMRunFrame
+from pipecat.frames.frames import LLMRunFrame, TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
@@ -76,24 +76,28 @@ def build_llm(persona: Persona):
 
 
 async def prewarm_llm(llm) -> None:
-    """Open the LLM's HTTP connection during the idle gap before the caller
-    joins, so the first real turn (the intro) doesn't pay cold-start cost.
+    """Open the LLM's HTTP connection *and* prime the system-prompt cache during
+    the idle gap before the caller joins, so the first real turn doesn't pay
+    cold-start cost.
 
     The first OpenAI/Anthropic/Groq request of a session eats DNS+TLS+HTTP
     setup (~3.4s TTFB observed); later turns reuse the pooled connection and are
-    fast. We fire a cheap ``models.list()`` on the service's own ``_client`` —
-    the same pool the pipeline reuses for completions — and discard it. It never
-    touches the pipeline, so nothing is spoken or recorded.
+    fast. We fire a throwaway ``run_inference`` with ``max_tokens=1`` on the same
+    pool the pipeline reuses for completions. Unlike a bare ``models.list()``,
+    this uses the service's configured system instruction, so for Anthropic
+    (``enable_prompt_caching``) it also *writes* the system-prompt cache — the
+    first real turn then reads it. It runs out-of-band (no pipeline frames), so
+    nothing is spoken or recorded. The throwaway context is enough: the cached
+    prefix is the system prompt, independent of these messages.
 
     Best-effort: any failure (offline, auth, SDK change) is swallowed so a
     session is never broken — worst case is the pre-existing cold start.
     """
-    client = getattr(llm, "_client", None)
-    if client is None:
-        return
     try:
-        await client.models.list()
-        logger.info("LLM connection pre-warmed")
+        warm_ctx = LLMContext()
+        warm_ctx.add_message({"role": "user", "content": "hi"})
+        await llm.run_inference(warm_ctx, max_tokens=1)
+        logger.info("LLM connection pre-warmed (cache primed)")
     except Exception as e:
         logger.debug(f"LLM prewarm skipped: {e}")
 
@@ -197,8 +201,15 @@ async def _load_memory_brief(pool, persona: Persona, user_id: str | None) -> str
 
 def make_kickoff(task, context, recorder, persona: Persona, memory_brief: str | None):
     """Return a once-only `kickoff(source)` that seeds the context (memory brief +
-    opening messages, the latter also recorded) and queues the first LLM run.
-    Idempotent across triggers (rtvi ready / first participant joined)."""
+    opening messages, the latter also recorded) and produces turn zero.
+    Idempotent across triggers (rtvi ready / first participant joined).
+
+    Turn zero is either a fixed line spoken straight to TTS (when the persona
+    defines `static_greeting` — no cold LLM inference, so the caller hears the
+    agent immediately) or, otherwise, a normal `LLMRunFrame` that lets the LLM
+    generate the greeting. Either way the `opening_messages` are kept in context:
+    they preserve the user-first message ordering Anthropic requires and give the
+    LLM coherent context for the first real turn."""
     state = {"done": False}
 
     async def kickoff(source: str):
@@ -211,7 +222,16 @@ def make_kickoff(task, context, recorder, persona: Persona, memory_brief: str | 
         for msg in persona.opening_messages:
             context.add_message(msg)
             recorder.record_message(role=msg.get("role", "system"), text=msg.get("content", ""))
-        await task.queue_frames([LLMRunFrame()])
+        if persona.static_greeting:
+            # Speak a fixed greeting straight to TTS — no LLM inference, so no
+            # cold-start dead air. The TranscriptObserver only records assistant
+            # text from LLM frames, so record it manually here (no double-record).
+            greeting = persona.static_greeting
+            context.add_message({"role": "assistant", "content": greeting})
+            recorder.record_message(role="assistant", text=greeting)
+            await task.queue_frames([TTSSpeakFrame(text=greeting)])
+        else:
+            await task.queue_frames([LLMRunFrame()])
 
     return kickoff
 

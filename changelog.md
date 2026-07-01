@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-07-01 — Fix LLM cold-start on turn zero (static greeting + cache-priming warm-up)
+
+- **New feature:** personas can define an optional `persona.static_greeting`
+  string. When set, turn zero is that fixed line spoken straight to TTS
+  (`TTSSpeakFrame` in `make_kickoff`, `server/bot.py`) instead of an
+  `LLMRunFrame` — the caller hears the agent immediately rather than waiting on
+  the cold first inference (~3–4s). The slow first real inference is deferred to
+  after the user's first reply, when the connection and cache are warm. The
+  greeting is recorded to the transcript as an `assistant` message; the
+  `opening_messages` are still seeded so message ordering stays user-first (an
+  Anthropic requirement) and the LLM has coherent context for turn two. Opt-in:
+  personas without the field keep the dynamic LLM greeting.
+- **Warm-up upgrade:** `prewarm_llm` now fires a throwaway
+  `run_inference(max_tokens=1)` instead of `models.list()`. Besides opening the
+  pooled HTTP connection, it uses the configured system instruction, so for
+  Anthropic (`enable_prompt_caching`) it also *writes* the system-prompt cache —
+  the first real turn reads it (cache hit).
+- Static greetings authored for the active personas: `inigo_v3` (Inigo),
+  `inigo_v4_fr` (Ignace), `inigo_v5_fr_nomem` (Leo), `yarden_mini` (Sophie).
+
 ## 2026-06-20 — Gate interruptions on a real transcript (fix dead-air after a turn)
 
 - **Behavior change:** the user-turn start / barge-in trigger is now

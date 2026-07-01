@@ -14,7 +14,8 @@
       {
         "role": "user",
         "content": "Greet the user warmly in ONE short sentence. Say only your first name, Sophie, and ask for their name. Reveal nothing else about yourself yet."
-      }    ]
+      }    ],
+    "static_greeting": "Hi — I'm Sophie. What's your name?"
   },
   "llm": {
     "provider": "openai",

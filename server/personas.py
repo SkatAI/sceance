@@ -131,6 +131,7 @@ class PersonaTextConfig:
     description: str
     system_prompt: str
     opening_messages: list[dict]
+    static_greeting: str | None
     page_intro: str | None
     cta: str | None
 
@@ -154,6 +155,7 @@ class PersonaTextConfig:
             description=persona.get("description", ""),
             system_prompt=system_prompt,
             opening_messages=_validate_opening_messages(persona.get("opening_messages", []), id),
+            static_greeting=persona.get("static_greeting"),
             page_intro=persona.get("page_intro"),
             cta=persona.get("cta"),
         )
@@ -270,6 +272,10 @@ class Persona:
     @property
     def opening_messages(self) -> list[dict]:
         return self.text.opening_messages
+
+    @property
+    def static_greeting(self) -> str | None:
+        return self.text.static_greeting
 
     @property
     def page_intro(self) -> str | None:
