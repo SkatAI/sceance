@@ -1,5 +1,16 @@
 # path forward
 
+
+platform to test each component separately : TTS, STT, LLM,
+
+LLM
+simulate a conversion via LLM
+text only ,
+one LLM as user tthe other aas persona
+evaluate persona output : latency, in chararacter, deterministic (no markdown), lengh of response, and cost
+
+
+
 - Stall detection is heuristic (SQL-only, no log confirmation) as planned — the log cross-check is the deferred next iteration.
 
 

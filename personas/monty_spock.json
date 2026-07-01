@@ -3,7 +3,8 @@
   "agent": {
     "active": false,
     "lang": "en",
-    "memory": false
+    "memory": false,
+    "visibility": "public"
   },
   "persona": {
     "name": "Monty Spock",
