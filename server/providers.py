@@ -19,6 +19,7 @@ from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.gradium.tts import GradiumTTSService
 from pipecat.services.groq.llm import GroqLLMService
 from pipecat.services.openai.responses.llm import OpenAIResponsesHttpLLMService
+from pipecat.services.openrouter.llm import OpenRouterLLMService
 
 from deepgram_tts import SpeedDeepgramTTSService
 from personas import Persona
@@ -63,10 +64,30 @@ def build_groq_llm(persona: Persona, system_instruction: str):
     )
 
 
+def build_openrouter_llm(persona: Persona, system_instruction: str):
+    # OpenRouter is an OpenAI-compatible gateway in front of many providers,
+    # letting us reach models we have no direct integration for (Google, Mistral,
+    # DeepSeek, …). The pipecat service bakes in
+    # base_url=https://openrouter.ai/api/v1; the model id is the full OpenRouter
+    # slug (e.g. "google/gemini-2.5-flash"). `provider.sort=latency` disables
+    # OpenRouter's load-balancing and routes each request to the lowest-latency
+    # upstream — the right default for a real-time voice agent. It rides through
+    # pipecat via Settings.extra -> the OpenAI client's extra_body.
+    openrouter_settings = {"model": persona.llm_model, "system_instruction": system_instruction}
+    if persona.temperature is not None:
+        openrouter_settings["temperature"] = persona.temperature
+    openrouter_settings["extra"] = {"extra_body": {"provider": {"sort": "latency"}}}
+    return OpenRouterLLMService(
+        api_key=get_settings().openrouter_api_key,
+        settings=OpenRouterLLMService.Settings(**openrouter_settings),
+    )
+
+
 LLM_FACTORIES = {
     "openai": build_openai_llm,
     "anthropic": build_anthropic_llm,
     "groq": build_groq_llm,
+    "openrouter": build_openrouter_llm,
 }
 
 

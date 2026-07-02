@@ -16,7 +16,7 @@
         "content": "Accueille-moi chaleureusement en une courte phrase en utilisant l'ouverture de tes instructions, puis invite-moi à partager ce qui me préoccupe. Demande moi mon prénom. Ne conseille pas encore — laisse-moi d'abord décrire pleinement la situation.."
       }
     ],
-    "static_greeting": "Bonjour — je suis Leo, et je suis content que vous appeliez. Avant de commencer, quel est votre prénom, et qu'est-ce qui vous préoccupe ?",
+    "static_greeting": "Bonjour, je suis Léo, et je suis content que tu appeles. Avant de commencer, quel ton votre prénom, et qu'est-ce qui te préoccupe ?",
     "page_intro": "Tu es venu ici sans trop savoir pourquoi.\n\nC'est un bon début.\n\nUne méthode vieille de cinq siècles pour mettre des mots sur ce que tu cherches.\n\nAppelle Ignace, parle-lui.",
     "cta": "Appelle Ignace, parle-lui."
   },

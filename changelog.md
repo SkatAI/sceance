@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-02 — Add OpenRouter as an LLM provider
+
+- **New provider:** personas can now set `llm.provider = "openrouter"` to reach
+  any model on OpenRouter's OpenAI-compatible gateway (Google, Mistral,
+  DeepSeek, Llama, …) using the full model slug (e.g.
+  `"google/gemini-2.5-flash"`) as `llm.model`. Wired via pipecat's
+  `OpenRouterLLMService` in `build_openrouter_llm` + a `LLM_FACTORIES` entry
+  (`server/providers.py`) — no bot-orchestration change. Requests set
+  `provider.sort=latency` so OpenRouter routes each turn to the lowest-latency
+  upstream, the right default for a real-time voice agent.
+- **Config:** reads `OPENROUTER_API_KEY` from the environment
+  (`server/settings.py`); add it to `server/.env`.
+
 ## 2026-07-01 — Fix LLM cold-start on turn zero (static greeting + cache-priming warm-up)
 
 - **New feature:** personas can define an optional `persona.static_greeting`

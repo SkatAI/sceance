@@ -15,9 +15,15 @@
         "role": "user",
         "content": "Greet the user warmly in ONE short sentence. Say only your first name, Sophie, and ask for their name. Reveal nothing else about yourself yet."
       }    ],
-    "static_greeting": "Hi — I'm Sophie. What's your name?"
+    "static_greeting": "Hi, I'm Sophie. What's your name?"
   },
   "llm": {
+    "provider": "openrouter",
+    "model": "meta-llama/llama-4-maverick",
+    "description": "Llama 4 Maverick on OpenRouter",
+    "temperature": 1
+  },
+  "llm_openai": {
     "provider": "openai",
     "model": "gpt-4.1",
     "description": "GPT-4.1",

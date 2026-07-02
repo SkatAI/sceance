@@ -3,7 +3,7 @@
   "agent": {
     "active": true,
     "lang": "en",
-    "memory": false,
+    "memory": true,
     "visibility": "public"
   },
   "persona": {
@@ -16,14 +16,14 @@
         "content": "The call has just connected. Say your name. Greet me warmly in one short sentence using the opening from your instructions, then invite me to share what's on my mind. Do not counsel yet — let me describe it fully first. Ask for my name"
       }
     ],
-    "static_greeting": "Hello — I'm Inigo, and I'm glad you called. Before we begin, may I ask your name — and what's on your mind?",
+    "static_greeting": "Hello, I'm Inigo, and I'm glad you called. Before we begin, may I ask your name and what's on your mind?",
     "page_intro": "You're not sure why you're here. Well, that's a start.\n\nThe Jesuit method for putting words to what you're after.\n\nCall Inigo. Talk to him.",
     "cta": "Call Inigo. Talk to him."
   },
   "llm": {
-    "provider": "anthropic",
-    "model": "claude-haiku-4-5",
-    "description": "Claude Haiku 4.5",
+    "provider": "openrouter",
+    "model": "meta-llama/llama-4-maverick",
+    "description": "Llama 4 Maverick on OpenRouter",
     "temperature": 1
   },
   "tts_deepgram": {

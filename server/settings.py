@@ -47,6 +47,7 @@ class Settings:
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
     groq_api_key: str | None = None
+    openrouter_api_key: str | None = None
     cartesia_api_key: str | None = None
     deepgram_api_key: str | None = None
     gradium_api_key: str | None = None
@@ -71,6 +72,7 @@ class Settings:
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
             groq_api_key=os.getenv("GROQ_API_KEY"),
+            openrouter_api_key=os.getenv("OPENROUTER_API_KEY"),
             cartesia_api_key=os.getenv("CARTESIA_API_KEY"),
             deepgram_api_key=os.getenv("DEEPGRAM_API_KEY"),
             gradium_api_key=os.getenv("GRADIUM_API_KEY"),

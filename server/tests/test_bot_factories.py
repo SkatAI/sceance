@@ -30,6 +30,10 @@ class FakeGroqService(FakeOpenAIService):
     pass
 
 
+class FakeOpenRouterService(FakeOpenAIService):
+    pass
+
+
 class FakeCartesiaService(FakeOpenAIService):
     pass
 
@@ -148,6 +152,29 @@ def test_build_llm_creates_groq_service(monkeypatch):
     assert "Be concise." in service.settings.kwargs["system_instruction"]
 
 
+def test_build_llm_creates_openrouter_service(monkeypatch):
+    monkeypatch.setattr(providers, "OpenRouterLLMService", FakeOpenRouterService)
+    monkeypatch.setattr(get_settings(), "openrouter_api_key", "openrouter-key")
+    persona = make_persona(
+        llm={
+            "provider": "openrouter",
+            "model": "google/gemini-2.5-flash",
+            "temperature": 0.4,
+        }
+    )
+
+    service = bot.build_llm(persona)
+
+    assert isinstance(service, FakeOpenRouterService)
+    assert service.api_key == "openrouter-key"
+    assert service.settings.kwargs["model"] == "google/gemini-2.5-flash"
+    assert service.settings.kwargs["temperature"] == 0.4
+    assert service.settings.kwargs["extra"] == {
+        "extra_body": {"provider": {"sort": "latency"}}
+    }
+    assert "Be concise." in service.settings.kwargs["system_instruction"]
+
+
 def test_build_llm_rejects_unknown_provider():
     persona = make_persona(llm={"provider": "other"})
 
@@ -158,7 +185,7 @@ def test_build_llm_rejects_unknown_provider():
 def test_llm_and_tts_registries_list_supported_providers():
     # Adding a provider should be a registry entry, not an orchestration edit —
     # so the registries are the single source of truth for what's supported.
-    assert set(providers.LLM_FACTORIES) == {"openai", "anthropic", "groq"}
+    assert set(providers.LLM_FACTORIES) == {"openai", "anthropic", "groq", "openrouter"}
     assert set(providers.TTS_FACTORIES) == {"cartesia", "deepgram", "gradium"}
 
 
