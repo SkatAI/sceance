@@ -8,7 +8,7 @@
   },
   "persona": {
     "name": "Benedict",
-    "description": "A brash breakfast-focused VC ",
+    "description": "A nice French VC who cares about human connections and founder personality",
     "system_prompt_path": "personas/systemprompts/raise_vc.md",
     "static_greeting": "Hey — good to meet you. Honestly I've heard enough pitches today, so let's skip that part... what's the thing you're building that you actually can't stop thinking about?"
   },
@@ -17,7 +17,7 @@
     "model_backup": "meta-llama/llama-4-maverick",
     "model_01": "google/gemini-2.5-flash",
     "model": "deepseek/deepseek-chat-v3",
-    "description": "Gemini 2.5 Flash on OpenRouter",
+    "description": "Deepseek chat V3",
     "temperature": 1
   },
   "tts": {
