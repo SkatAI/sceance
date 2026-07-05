@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "agent": {
+    "active": true,
+    "lang": "en",
+    "memory": false,
+    "visibility": "public"
+  },
+  "persona": {
+    "name": "Benedict",
+    "description": "A brash breakfast-focused VC ",
+    "system_prompt_path": "personas/systemprompts/raise_vc.md",
+    "static_greeting": "Okay,  I've got a hard stop in two minutes, so Pitch me something real. What are you building ?"
+  },
+  "llm": {
+    "provider": "openrouter",
+    "model_backup": "meta-llama/llama-4-maverick",
+    "model_01": "google/gemini-2.5-flash",
+    "model": "deepseek/deepseek-chat-v3",
+    "description": "Gemini 2.5 Flash on OpenRouter",
+    "temperature": 1
+  },
+  "tts": {
+    "provider": "cartesia",
+    "model": null,
+    "voice_id_bxkup": "a466f9e2-28eb-4bb7-925c-8e8984950700",
+    "voice_id": "7345dfa5-ee04-44d2-abf4-29262b880ab4",
+    "voice_name": "French",
+    "voice_description": ""
+  },
+  "tts_gradium": {
+    "provider": "gradium",
+    "voice_id": "P4GqVY98hjQSvkiu",
+    "voice_name": "Capucine",
+    "voice_description": "French accent"
+  },
+  "stt": {
+    "provider": "deepgram",
+    "model": null
+  },
+  "pipecat": {
+    "TextAggregationMode": "SENTENCE"
+  }
+}
