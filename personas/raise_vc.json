@@ -10,7 +10,7 @@
     "name": "Benedict",
     "description": "A brash breakfast-focused VC ",
     "system_prompt_path": "personas/systemprompts/raise_vc.md",
-    "static_greeting": "Okay,  I've got a hard stop in two minutes, so Pitch me something real. What are you building ?"
+    "static_greeting": "Hey — good to meet you. Honestly I've heard enough pitches today, so let's skip that part... what's the thing you're building that you actually can't stop thinking about?"
   },
   "llm": {
     "provider": "openrouter",
