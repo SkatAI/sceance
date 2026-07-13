@@ -57,10 +57,13 @@ async def api_sessions(
     offset: int = Query(0, ge=0),
     persona: str | None = Query(None),
     environment: str | None = Query(None),
+    # 'pipecat' | 'gradbot' — the gradbot app records into this same database
+    # but has no dashboard, so its calls surface here.
+    framework: str | None = Query(None),
     pool=Depends(get_pool),
     _admin: CurrentUser = Depends(require_admin),
 ):
-    return await list_sessions(pool, limit, offset, persona, environment)
+    return await list_sessions(pool, limit, offset, persona, environment, framework)
 
 
 def _response_latency(turn_events: list[dict]) -> dict:

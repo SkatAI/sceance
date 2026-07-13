@@ -131,6 +131,7 @@ def test_api_sessions_maps_list_rows():
                     "id": sid,
                     "persona_name": "Marie",
                     "environment": "local",
+                    "framework": "pipecat",
                     "lang": "fr",
                     "started_at": started,
                     "ended_at": None,
@@ -148,16 +149,29 @@ def test_api_sessions_maps_list_rows():
             return 1
 
     pool = FakePool(Connection())
+    # Keyword args on purpose: this handler's signature grows, and calling it
+    # positionally means the next inserted parameter silently shifts `pool` into
+    # something else. That has broken this before.
     result = asyncio.run(
-        admin.api_sessions(20, 0, None, None, pool, CurrentUser("u", "e", "n", True))
+        admin.api_sessions(
+            limit=20,
+            offset=0,
+            persona=None,
+            environment=None,
+            framework=None,
+            pool=pool,
+            _admin=CurrentUser("u", "e", "n", True),
+        )
     )
 
     assert result["total"] == 1
+    assert result["frameworks"] == ["pipecat"]
     assert result["sessions"] == [
         {
             "id": str(sid),
             "persona_name": "Marie",
             "environment": "local",
+            "framework": "pipecat",
             "lang": "fr",
             "started_at": started.isoformat(),
             "ended_at": None,

@@ -31,6 +31,14 @@
   <section class="sessions">
     <div class="sessions-head">
       <h2>Recent séances</h2>
+      <!--
+        The gradbot app writes into this same database, so both stacks' calls land
+        in this ledger. Sits outside the row grid below, which has a fixed set of
+        columns — no CSS surgery needed to add a filter.
+      -->
+      <select id="framework-filter" class="persona-filter" aria-label="Filter by framework">
+        <option value="">All stacks</option>
+      </select>
       <div class="pager" id="pager"></div>
     </div>
     <div class="session-head-row" role="row">

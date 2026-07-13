@@ -64,7 +64,9 @@ async def aggregate(pool: asyncpg.Pool, days: int) -> dict:
     }
 
 
-def _session_filter(persona: str | None, environment: str | None) -> tuple[str, list]:
+def _session_filter(
+    persona: str | None, environment: str | None, framework: str | None = None
+) -> tuple[str, list]:
     """Build the shared WHERE clause + positional args for the session list.
 
     Returns ('', []) when unfiltered. Only fixed column names are interpolated;
@@ -78,6 +80,9 @@ def _session_filter(persona: str | None, environment: str | None) -> tuple[str, 
     if environment:
         args.append(environment)
         conditions.append(f"s.environment = ${len(args)}")
+    if framework:
+        args.append(framework)
+        conditions.append(f"s.framework = ${len(args)}")
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     return where, args
 
@@ -88,13 +93,21 @@ async def list_sessions(
     offset: int,
     persona: str | None,
     environment: str | None,
+    framework: str | None = None,
 ) -> dict:
-    """Paginated, optionally-filtered session list + filter dropdown options."""
-    where, filter_args = _session_filter(persona, environment)
+    """Paginated, optionally-filtered session list + filter dropdown options.
+
+    `framework` ('pipecat' | 'gradbot') exists because this database is shared
+    with the gradbot app, which records sessions here but has no dashboard of its
+    own. Without the filter the ledger silently interleaves both stacks — and an
+    unfiltered latency figure is an average across two different frameworks.
+    """
+    where, filter_args = _session_filter(persona, environment, framework)
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             f"""
-            SELECT s.id, s.persona_name, s.environment, s.lang, s.started_at, s.ended_at,
+            SELECT s.id, s.persona_name, s.environment, s.framework,
+                   s.lang, s.started_at, s.ended_at,
                    extract(epoch FROM (s.ended_at - s.started_at)) AS duration_s,
                    s.total_prompt_tokens, s.total_completion_tokens,
                    s.total_cache_read_tokens, s.total_cache_creation_tokens,
@@ -126,17 +139,27 @@ async def list_sessions(
             ORDER BY environment
             """
         )
+        # Distinct frameworks ('pipecat', 'gradbot'), for the filter dropdown.
+        framework_rows = await conn.fetch(
+            """
+            SELECT DISTINCT framework FROM sessions
+            WHERE framework IS NOT NULL
+            ORDER BY framework
+            """
+        )
     return {
         "total": total,
         "limit": limit,
         "offset": offset,
         "personas": [r["persona_name"] for r in persona_rows],
         "environments": [r["environment"] for r in env_rows],
+        "frameworks": [r["framework"] for r in framework_rows],
         "sessions": [
             {
                 "id": str(r["id"]),
                 "persona_name": r["persona_name"],
                 "environment": r["environment"],
+                "framework": r["framework"],
                 "lang": r["lang"],
                 "started_at": _iso(r["started_at"]),
                 "ended_at": _iso(r["ended_at"]),

@@ -14,6 +14,10 @@ const state = {
   total: 0,
   persona: "",
   environment: "",
+  // The gradbot app records into this same database but has no dashboard, so its
+  // calls land in this ledger too. Unfiltered, a latency figure here is an
+  // average across two different frameworks.
+  framework: "",
 };
 
 // ─── Aggregate / KPIs ───────────────────────────────────────────────
@@ -81,10 +85,12 @@ async function loadSessions() {
     const params = new URLSearchParams({ limit: state.limit, offset: state.offset });
     if (state.persona) params.set("persona", state.persona);
     if (state.environment) params.set("environment", state.environment);
+    if (state.framework) params.set("framework", state.framework);
     const data = await getJSON(`/api/sessions?${params}`);
     state.total = data.total;
     renderPersonaFilter(data.personas || []);
     renderEnvFilter(data.environments || []);
+    renderFrameworkFilter(data.frameworks || []);
     renderSessions(data.sessions);
     renderPager();
   } catch (e) {
@@ -108,7 +114,10 @@ function renderSessions(sessions) {
             ${escapeHtml(s.persona_name || "(unnamed)")}
             <span class="lang">${escapeHtml(lang)}</span>
           </div>
-          <div class="s-env">${escapeHtml(s.environment || "—")}</div>
+          <div class="s-env">
+            ${escapeHtml(s.environment || "—")}
+            <span class="lang">${escapeHtml(s.framework || "?")}</span>
+          </div>
           <div class="s-date">${fmtDate(s.started_at)}</div>
           <div class="s-dur">${fmtDuration(s.duration_s)}</div>
           <div class="s-msgs">${s.msg_count} turn${s.msg_count === 1 ? "" : "s"}</div>
@@ -144,6 +153,10 @@ function renderPersonaFilter(personas) {
 
 function renderEnvFilter(environments) {
   renderFilter("env-filter", "All envts", environments, state.environment);
+}
+
+function renderFrameworkFilter(frameworks) {
+  renderFilter("framework-filter", "All stacks", frameworks, state.framework);
 }
 
 function renderPager() {
@@ -199,6 +212,7 @@ async function boot() {
   bindPeriod();
   bindFilter("persona-filter", "persona");
   bindFilter("env-filter", "environment");
+  bindFilter("framework-filter", "framework");
   loadAggregate();
   loadSessions();
 }

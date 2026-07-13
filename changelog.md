@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-13 — Show which framework recorded each session
+
+The gradbot app writes its sessions into this same database and has no dashboard
+of its own, so its calls surface in this ledger. Unlabelled, they were
+indistinguishable from Pipecat's — and an unfiltered latency figure was an
+average across two different frameworks.
+
+- `sessions.framework` (`'pipecat'` | `'gradbot'`, added in gradbot's migration
+  007, defaulting to `'pipecat'`) is now surfaced on each ledger row and offered
+  as an "All stacks" filter, alongside the persona and environment ones.
+- `admin.api_sessions` gained a `framework` query param. Its test now calls the
+  handler with **keyword** args: the signature keeps growing, and calling it
+  positionally means the next inserted parameter silently shifts `pool` into
+  something else. That is exactly how this broke.
+
 ## 2026-07-13 — Recover from a stale session instead of wedging on it
 
 - **Auth self-heals on a 401.** A rejected token from `/api/me` was left in
