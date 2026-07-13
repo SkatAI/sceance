@@ -15,12 +15,16 @@ from __future__ import annotations
 
 from pipecat.services.anthropic.llm import AnthropicLLMService
 from pipecat.services.cartesia.tts import CartesiaTTSService
+from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.deepgram.tts import DeepgramTTSService
+from pipecat.services.gradium.stt import GradiumSTTService
 from pipecat.services.gradium.tts import GradiumTTSService
 from pipecat.services.groq.llm import GroqLLMService
 from pipecat.services.openai.responses.llm import OpenAIResponsesHttpLLMService
 from pipecat.services.openrouter.llm import OpenRouterLLMService
+from pipecat.transcriptions.language import Language
 
+from deepgram_stt import StallGuardedDeepgramSTTService
 from deepgram_tts import SpeedDeepgramTTSService
 from personas import Persona
 from settings import get_settings
@@ -141,4 +145,65 @@ TTS_FACTORIES = {
     "cartesia": build_cartesia_tts,
     "deepgram": build_deepgram_tts,
     "gradium": build_gradium_tts,
+}
+
+
+# ---- STT --------------------------------------------------------------------
+#
+# STT was hardcoded to Deepgram until the gradbot comparison needed it swappable:
+# that build runs Gradium STT, and a latency comparison whose STT vendors differ
+# is measuring the vendors as much as the frameworks.
+
+
+def build_deepgram_stt(persona: Persona, lang: str, recovery_message: str):
+    """Deepgram STT with a stall watchdog.
+
+    Model defaults to nova-3 for English (nova-3 is English-only) and nova-2
+    otherwise; an explicit `persona.stt_model` wins.
+
+    StallGuardedDeepgramSTTService adds a watchdog on top of the base service: if
+    a turn ends with no final transcript (a silently half-open Deepgram socket —
+    the failure pipecat does NOT auto-recover; see deepgram_stt.py), it forces a
+    reconnect so the next turn lands on a healthy connection, and speaks
+    `recovery_message` so the dead air is audible.
+    """
+    stt_model = persona.stt_model or ("nova-3" if lang.startswith("en") else "nova-2")
+    return StallGuardedDeepgramSTTService(
+        api_key=get_settings().deepgram_api_key,
+        settings=DeepgramSTTService.Settings(
+            model=stt_model,
+            language=lang,
+            profanity_filter=False,
+        ),
+        recovery_message=recovery_message,
+    )
+
+
+def build_gradium_stt(persona: Persona, lang: str, recovery_message: str):
+    """Gradium streaming STT (WebSocket ASR).
+
+    No stall watchdog: `StallGuardedDeepgramSTTService` exists for a Deepgram
+    failure mode (a silently half-open socket that pipecat never recovers). We
+    have not seen Gradium do that, and wrapping a service in a watchdog written
+    for someone else's bug would be cargo-culting. `recovery_message` is accepted
+    to keep the factory signature uniform, and ignored.
+
+    `delay_in_frames` is Gradium's latency/accuracy knob — frames of 80ms it
+    buffers before emitting text, default 10 (= 800ms). `stt.model` is unused by
+    this service; `stt.delay_in_frames` on the persona sets the knob.
+    """
+    del recovery_message
+    settings = {"language": Language(lang) if lang else None}
+    delay = persona.raw.get("stt", {}).get("delay_in_frames")
+    if delay is not None:
+        settings["delay_in_frames"] = int(delay)
+    return GradiumSTTService(
+        api_key=get_settings().gradium_api_key,
+        settings=GradiumSTTService.Settings(**settings),
+    )
+
+
+STT_FACTORIES = {
+    "deepgram": build_deepgram_stt,
+    "gradium": build_gradium_stt,
 }

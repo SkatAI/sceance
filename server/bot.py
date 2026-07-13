@@ -36,16 +36,14 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
-from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.tts_service import TextAggregationMode
-from pipecat.turns.user_start import MinWordsUserTurnStartStrategy
-from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.transports.base_transport import BaseTransport
 from pipecat.transports.daily.transport import DailyParams, DailyTransport
+from pipecat.turns.user_start import MinWordsUserTurnStartStrategy
+from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
 import prompting
 import providers
-from deepgram_stt import StallGuardedDeepgramSTTService
 from memory import load_memory_brief
 from observer import TranscriptObserver
 from personas import Persona, load_persona
@@ -118,28 +116,20 @@ def build_tts(persona: Persona):
 
 
 def build_stt(persona: Persona):
-    """Deepgram STT with a stall watchdog. Model defaults to nova-3 for English
-    (nova-3 is English-only) and nova-2 otherwise; an explicit `persona.stt_model`
-    wins.
+    """Dispatch to the STT provider factory registered for `persona.stt_provider`
+    (`deepgram`/`gradium`).
 
-    StallGuardedDeepgramSTTService adds a watchdog on top of the base service: if
-    a turn ends with no final transcript (a silently half-open Deepgram socket —
-    the failure pipecat does NOT auto-recover; see deepgram_stt.py), it forces a
-    reconnect so the next turn lands on a healthy connection and speaks
-    `recovery_message` so the dead air is audible.
+    `stt.provider` used to be parsed and then ignored — STT was always Deepgram.
+    It is a real seam now because the gradbot build runs Gradium STT, and a
+    latency comparison whose STT vendors differ measures the vendors as much as
+    the frameworks.
     """
     lang = (persona.lang or "en").lower()
-    stt_model = persona.stt_model or ("nova-3" if lang.startswith("en") else "nova-2")
-    stt = StallGuardedDeepgramSTTService(
-        api_key=get_settings().deepgram_api_key,
-        settings=DeepgramSTTService.Settings(
-            model=stt_model,
-            language=lang,
-            profanity_filter=False,
-        ),
-        recovery_message=_stt_recovery_message(lang),
-    )
-    logger.info(f"STT: {persona.stt_provider} model={stt_model} language={lang}")
+    factory = providers.STT_FACTORIES.get(persona.stt_provider)
+    if factory is None:
+        raise ValueError(f"Unknown STT provider in persona: {persona.stt_provider!r}")
+    stt = factory(persona, lang, _stt_recovery_message(lang))
+    logger.info(f"STT: {persona.stt_provider} language={lang} -> {type(stt).__name__}")
     return stt
 
 

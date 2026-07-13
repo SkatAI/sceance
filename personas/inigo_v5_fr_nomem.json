@@ -34,8 +34,7 @@
     "voice_description": "Francais"
   },
   "stt": {
-    "provider": "deepgram",
-    "model": null
+    "provider": "gradium"
   },
   "pipecat": {
     "TextAggregationMode": "SENTENCE"

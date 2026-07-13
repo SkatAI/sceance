@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-07-13 — STT is swappable (Deepgram | Gradium)
+
+`stt.provider` was parsed and then ignored — `build_stt` always constructed
+Deepgram. It is a real seam now, mirroring `LLM_FACTORIES` / `TTS_FACTORIES`:
+
+- **`providers.STT_FACTORIES`** = `{deepgram, gradium}`. `bot.build_stt` dispatches
+  on `persona.stt_provider` and raises on an unknown one (it used to silently
+  ignore it).
+- **`build_deepgram_stt`** keeps `StallGuardedDeepgramSTTService` — the watchdog for
+  Deepgram's silently half-open socket, which pipecat does not recover from.
+  **`build_gradium_stt` deliberately does not**: that watchdog was written for
+  someone else's bug, and we have never seen Gradium do it. A test asserts the
+  Gradium path stays unwrapped.
+- **`inigo_v5_fr_nomem` (Leo) moves to `stt.provider: "gradium"`.** He now matches
+  the gradbot build on all three services — Gradium STT, GPT-4.1, Gradium TTS —
+  so a latency comparison against it measures the *frameworks* rather than
+  Deepgram-vs-Gradium. Sophie is unchanged (still Deepgram); flip her the same way
+  if you want her comparison clean too.
+- Optional `stt.delay_in_frames` on the persona exposes Gradium's latency knob
+  (frames of 80ms buffered before text is emitted; pipecat's default is 10 = 800ms).
+
 ## 2026-07-13 — Match Leo to the gradbot build (GPT-4.1 + Gradium TTS)
 
 - **`inigo_v5_fr_nomem`**: LLM `anthropic/claude-haiku-4-5` -> **`openai/gpt-4.1`**,

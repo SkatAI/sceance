@@ -62,10 +62,10 @@ class FakeStallGuardedSTTService(FakeOpenAIService):
 
 
 def _patch_stt(monkeypatch):
-    # build_stt constructs StallGuardedDeepgramSTTService and reads
+    # providers.build_deepgram_stt constructs StallGuardedDeepgramSTTService and reads
     # DeepgramSTTService.Settings; fake both so we can inspect the chosen model.
-    monkeypatch.setattr(bot, "StallGuardedDeepgramSTTService", FakeStallGuardedSTTService)
-    monkeypatch.setattr(bot, "DeepgramSTTService", FakeDeepgramSTTService)
+    monkeypatch.setattr(providers, "StallGuardedDeepgramSTTService", FakeStallGuardedSTTService)
+    monkeypatch.setattr(providers, "DeepgramSTTService", FakeDeepgramSTTService)
 
 
 def test_build_stt_defaults_english_to_nova_3(monkeypatch):
@@ -504,7 +504,7 @@ def test_run_bot_wires_pipeline_and_kickoff_with_memory(monkeypatch):
 
     transport = FakeTransport()
     monkeypatch.setattr(bot, "load_persona", lambda agent_name: persona)
-    monkeypatch.setattr(bot, "StallGuardedDeepgramSTTService", FakeSTTService)
+    monkeypatch.setattr(providers, "StallGuardedDeepgramSTTService", FakeSTTService)
     monkeypatch.setattr(bot, "build_tts", lambda persona: "tts")
     monkeypatch.setattr(bot, "build_llm", lambda persona: "llm")
 
@@ -614,7 +614,7 @@ def test_run_bot_records_but_skips_memory_when_persona_memory_off(monkeypatch):
         raise AssertionError("memory brief must not load when memory is off")
 
     monkeypatch.setattr(bot, "load_persona", lambda agent_name: persona)
-    monkeypatch.setattr(bot, "StallGuardedDeepgramSTTService", FakeSTTService)
+    monkeypatch.setattr(providers, "StallGuardedDeepgramSTTService", FakeSTTService)
     monkeypatch.setattr(bot, "build_tts", lambda persona: "tts")
     monkeypatch.setattr(bot, "build_llm", lambda persona: "llm")
     monkeypatch.setattr(bot, "LLMContext", lambda: object())
@@ -634,3 +634,35 @@ def test_run_bot_records_but_skips_memory_when_persona_memory_off(monkeypatch):
     assert captured["started"] is True
     assert captured["update_memory"] is False
     assert captured.get("ran") is True
+
+
+# ---- STT is a real seam now --------------------------------------------------
+
+def test_stt_factories_cover_both_providers():
+    # `stt.provider` was parsed and then ignored — STT was always Deepgram. It is
+    # dispatched for real now, because the gradbot build runs Gradium STT and a
+    # latency comparison whose STT vendors differ measures the vendors as much as
+    # the frameworks.
+    assert set(providers.STT_FACTORIES) == {"deepgram", "gradium"}
+
+
+def test_build_stt_rejects_an_unknown_provider():
+    persona = make_persona(stt={"provider": "whisper"})
+    with pytest.raises(ValueError, match="Unknown STT provider"):
+        bot.build_stt(persona)
+
+
+def test_build_stt_dispatches_to_gradium(monkeypatch):
+    # StallGuardedDeepgramSTTService exists for a Deepgram failure mode (a
+    # silently half-open socket pipecat never recovers). The Gradium path must not
+    # inherit a watchdog written for someone else's bug.
+    class FakeGradiumSTT(FakeOpenAIService):
+        pass
+
+    monkeypatch.setattr(providers, "GradiumSTTService", FakeGradiumSTT)
+    persona = make_persona(agent={"lang": "fr"}, stt={"provider": "gradium"})
+
+    stt = bot.build_stt(persona)
+
+    assert isinstance(stt, FakeGradiumSTT)
+    assert "StallGuarded" not in type(stt).__name__
