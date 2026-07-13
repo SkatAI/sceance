@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-07-13 — Match Leo to the gradbot build (GPT-4.1 + Gradium TTS)
+
+- **`inigo_v5_fr_nomem`**: LLM `anthropic/claude-haiku-4-5` -> **`openai/gpt-4.1`**,
+  TTS `cartesia` -> **`gradium`** (voice `axlOaUiFyOZhy4nv`, "Leo"). Lang stays
+  `fr`. The old provider blocks are parked as `_parked_*` rather than deleted.
+  Now the only remaining differences from the gradbot Leo are the ones the two
+  frameworks force (see below).
+- **Fixed the greeting's French.** `static_greeting` said *"quel ton votre prénom"*
+  (ungrammatical, and mixes tu/vous) and *"tu appeles"*. It is spoken verbatim by
+  TTS, so this was being said out loud on every call. Now *"quel est ton prénom"* /
+  *"tu appelles"*, matching the gradbot build word for word.
+- **The memory appendix no longer leaks into memory-off personas.**
+  `build_system_instruction` appended it unconditionally, so Leo — who is
+  `memory: false` — was told he "will receive a memory brief at the start of each
+  conversation", a brief `_load_memory_brief` never sends him. The *language
+  directive* leaked it too ("regardless of the language of the memory brief").
+  Both are now gated on `persona.memory`: a lie to the model and ~150 wasted
+  prompt tokens, and it also made Leo's prompt differ from the gradbot build's.
+
 ## 2026-07-13 — Make the turn-taking knobs configurable (for framework comparison)
 
 Two constants became settings, because a like-for-like comparison against the

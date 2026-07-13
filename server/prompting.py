@@ -28,23 +28,43 @@ You will receive a memory brief at the start of each conversation, wrapped in a
 _LANG_NAMES = {"en": "English", "fr": "French"}
 
 
-def _language_directive(lang: str) -> str:
-    """Pin the persona's spoken language so prior-session memory (which may be in
-    another language) or a user speaking something else can't flip it. `lang`
-    only steered STT/TTS before; the LLM had no language instruction at all."""
+def _language_directive(lang: str, has_memory: bool) -> str:
+    """Pin the persona's spoken language so a user speaking something else can't
+    flip it. `lang` only steers STT/TTS; the LLM needs telling separately.
+
+    The memory-brief clauses are conditional: a memory-off persona is never sent
+    a brief, so warning it not to mirror the brief's language is instructions
+    about a thing that does not exist.
+    """
     name = _LANG_NAMES.get(lang.split("-")[0].lower(), "English")
+    if has_memory:
+        return (
+            f"\n\n— Language —\n"
+            f"Always speak {name}. Every response must be in {name}, regardless of the "
+            f"language of the memory brief, earlier context, or anything the user says. "
+            f"The memory brief is internal notes that may be in another language — never "
+            f"mirror its language. If the user speaks another language, gently continue "
+            f"in {name}."
+        )
     return (
         f"\n\n— Language —\n"
-        f"Always speak {name}. Every response must be in {name}, regardless of the "
-        f"language of the memory brief, earlier context, or anything the user says. "
-        f"The memory brief is internal notes that may be in another language — never "
-        f"mirror its language. If the user speaks another language, gently continue "
-        f"in {name}."
+        f"Always speak {name}. Every response must be in {name}, regardless of earlier "
+        f"context or anything the user says. If the user speaks another language, "
+        f"gently continue in {name}."
     )
 
 
 def build_system_instruction(persona: Persona) -> str:
     """The complete LLM system instruction for a persona: its base system prompt,
-    the shared memory/onboarding appendix, and the output-language directive."""
+    the memory/onboarding appendix, and the output-language directive.
+
+    Everything memory-related is gated on `persona.memory`. It used to be
+    unconditional, so a memory-off persona was told it "will receive a memory brief
+    at the start of each conversation" — one `bot._load_memory_brief` never sends.
+    That is a lie to the model, ~150 tokens of prompt it cannot act on, and (for
+    the memory-off personas used in the gradbot comparison) a prompt the other
+    build does not have.
+    """
     lang = (persona.lang or "en").lower()
-    return persona.system_prompt + SHARED_SYSTEM_APPENDIX + _language_directive(lang)
+    appendix = SHARED_SYSTEM_APPENDIX if persona.memory else ""
+    return persona.system_prompt + appendix + _language_directive(lang, persona.memory)

@@ -16,25 +16,19 @@
         "content": "Accueille-moi chaleureusement en une courte phrase en utilisant l'ouverture de tes instructions, puis invite-moi à partager ce qui me préoccupe. Demande moi mon prénom. Ne conseille pas encore — laisse-moi d'abord décrire pleinement la situation.."
       }
     ],
-    "static_greeting": "Bonjour, je suis Léo, et je suis content que tu appeles. Avant de commencer, quel ton votre prénom, et qu'est-ce qui te préoccupe ?",
+    "static_greeting": "Bonjour, je suis Léo, et je suis content que tu appelles. Avant de commencer, quel est ton prénom, et qu'est-ce qui te préoccupe ?",
     "page_intro": "Tu es venu ici sans trop savoir pourquoi.\n\nC'est un bon début.\n\nUne méthode vieille de cinq siècles pour mettre des mots sur ce que tu cherches.\n\nAppelle Ignace, parle-lui.",
     "cta": "Appelle Ignace, parle-lui."
   },
   "llm": {
-    "provider": "anthropic",
-    "model": "claude-haiku-4-5",
-    "description": "Claude Haiku 4.5",
+    "provider": "openai",
+    "model": "gpt-4.1",
+    "description": "GPT-4.1",
     "temperature": 1
   },
   "tts": {
-    "provider": "cartesia",
-    "model": null,
-    "voice_id": "7345dfa5-ee04-44d2-abf4-29262b880ab4",
-    "voice_name": "",
-    "voice_description": ""
-  },
-  "tts_gradium": {
     "provider": "gradium",
+    "model": null,
     "voice_id": "axlOaUiFyOZhy4nv",
     "voice_name": "Leo",
     "voice_description": "Francais"
@@ -45,5 +39,18 @@
   },
   "pipecat": {
     "TextAggregationMode": "SENTENCE"
+  },
+  "_parked_llm_anthropic": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+    "description": "Claude Haiku 4.5",
+    "temperature": 1
+  },
+  "_parked_tts_cartesia": {
+    "provider": "cartesia",
+    "model": null,
+    "voice_id": "7345dfa5-ee04-44d2-abf4-29262b880ab4",
+    "voice_name": "",
+    "voice_description": ""
   }
 }
