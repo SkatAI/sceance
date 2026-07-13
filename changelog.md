@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-07-13 — Make the turn-taking knobs configurable (for framework comparison)
+
+Two constants became settings, because a like-for-like comparison against the
+gradbot build needs to be able to match them.
+
+- **`VAD_STOP_SECS`** (default `0.2`, Silero's default — previously implicit in a
+  bare `SileroVADAnalyzer()`). This is now explicit because it is load-bearing:
+  it decides when `user_stopped_speaking` fires, which starts the response-latency
+  stopwatch. The gradbot build's `flush_duration_s` **must equal it**, or the two
+  frameworks time "the user stopped talking" from different moments and every
+  cross-framework latency figure is wrong by the gap. It was 0.3s out; gradbot
+  looked 0.5s faster at the median when the real gap was 0.2s.
+- **`BARGE_IN_MIN_WORDS`** (default `2` — unchanged shipping behaviour). Set it to
+  `1` to make barge-in purely VAD-driven, which is what gradbot does, for a fair
+  interruption comparison. **This re-exposes the contentless-blip dead-air bug it
+  was added to fix** — it logs a warning and must never run in production.
+
+`tests/test_user_turn_strategy.py` now pins both, so the two builds cannot
+silently drift apart again.
+
 ## 2026-07-13 — Show which framework recorded each session
 
 The gradbot app writes its sessions into this same database and has no dashboard

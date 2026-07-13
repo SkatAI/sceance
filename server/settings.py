@@ -36,6 +36,19 @@ class Settings:
     # Where the server runs: 'local' (dev .env) or 'online' (deployed secret);
     # 'unknown' when unset. Recorded on each session row.
     deploy_env: str = "unknown"
+    # How many transcribed words the user must produce before they can interrupt
+    # the bot mid-speech. 2 is the shipping value — it exists to stop a
+    # contentless VAD blip from cancelling an in-flight LLM turn (the ~13s
+    # dead-air bug). Set BARGE_IN_MIN_WORDS=1 to make barge-in purely VAD-driven,
+    # which is what gradbot does — useful for a like-for-like barge-in comparison,
+    # but it re-exposes that bug. Do not run 1 in production.
+    barge_in_min_words: int = 2
+    # Silence that ends the user's turn, in seconds. Pipecat's Silero default.
+    # Kept explicit because the gradbot build's `flush_duration_s` must match it:
+    # if the two differ, each framework starts its response-latency stopwatch at a
+    # different moment and every cross-framework latency number is wrong by the
+    # difference.
+    vad_stop_secs: float = 0.2
     # Supabase
     supabase_url: str = ""
     supabase_anon_key: str = ""
@@ -63,6 +76,8 @@ class Settings:
             max_sessions=int(os.getenv("MAX_SESSIONS", "5")),
             open_signup=os.getenv("OPEN_SIGNUP", "").strip().lower() in ("1", "true", "yes"),
             deploy_env=os.getenv("DEPLOY_ENV", "unknown").strip().lower() or "unknown",
+            barge_in_min_words=int(os.getenv("BARGE_IN_MIN_WORDS", "2")),
+            vad_stop_secs=float(os.getenv("VAD_STOP_SECS", "0.2")),
             supabase_url=os.getenv("SUPABASE_URL", "").rstrip("/"),
             supabase_anon_key=os.getenv("SUPABASE_KEY", ""),
             supabase_jwt_secret=os.getenv("SUPABASE_JWT_SECRET", "").strip(),

@@ -26,6 +26,7 @@ import asyncio
 import asyncpg
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import LLMRunFrame, TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -153,14 +154,30 @@ def build_context_aggregators():
     feeds STT); it just no longer triggers an interruption on its own. Pre-TTS the
     threshold is effectively 1 word, so normal turn-taking is unchanged; min_words
     only applies while the bot is speaking (genuine barge-in). The stop strategy
-    is left at its default (stop=None)."""
+    is left at its default (stop=None).
+
+    Both knobs are settings, not constants, because the gradbot build has to be
+    able to match them for a like-for-like comparison — `min_words` has no gradbot
+    equivalent (it barges in on raw VAD), and `stop_secs` must equal gradbot's
+    `flush_duration_s` or the two frameworks time "the user stopped talking" from
+    different moments.
+    """
+    settings = get_settings()
+    min_words = settings.barge_in_min_words
+    if min_words < 2:
+        logger.warning(
+            f"BARGE_IN_MIN_WORDS={min_words}: barge-in is now raw-VAD driven. This "
+            f"re-exposes the contentless-blip dead-air bug — comparison only, not prod."
+        )
     context = LLMContext()
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
         user_params=LLMUserAggregatorParams(
-            vad_analyzer=SileroVADAnalyzer(),
+            vad_analyzer=SileroVADAnalyzer(
+                params=VADParams(stop_secs=settings.vad_stop_secs)
+            ),
             user_turn_strategies=UserTurnStrategies(
-                start=[MinWordsUserTurnStartStrategy(min_words=2)],
+                start=[MinWordsUserTurnStartStrategy(min_words=min_words)],
             ),
         ),
     )

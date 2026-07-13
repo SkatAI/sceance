@@ -95,3 +95,32 @@ def test_build_context_aggregators_uses_min_words_start_strategy():
     _, user_aggregator, _ = bot.build_context_aggregators()
     start = user_aggregator._params.user_turn_strategies.start
     assert any(isinstance(s, MinWordsUserTurnStartStrategy) for s in start)
+
+
+# ---- endpointing must stay comparable with the gradbot build -----------------
+#
+# `user_stopped_speaking` starts the response-latency stopwatch. Pipecat fires it
+# after Silero's `stop_secs` of silence; the gradbot build fires it after its own
+# `flush_duration_s`. If those two differ, each framework times "the user stopped
+# talking" from a different moment and every cross-framework latency number is off
+# by the difference — measured once at 0.3s, which made gradbot look 0.5s faster
+# at the median when the real gap was 0.2s.
+
+GRADBOT_FLUSH_DURATION_S = 0.2  # personas/*.json in ../../gradbot
+
+
+def test_vad_stop_secs_matches_the_gradbot_flush_gate():
+    from settings import Settings
+
+    assert Settings().vad_stop_secs == GRADBOT_FLUSH_DURATION_S, (
+        "pipecat's VAD stop_secs and gradbot's flush_duration_s have drifted "
+        "apart; cross-framework latency comparisons are now wrong by the gap"
+    )
+
+
+def test_barge_in_gate_defaults_to_two_words():
+    from settings import Settings
+
+    # 1 makes barge-in raw-VAD driven (what gradbot does) and re-exposes the
+    # contentless-blip dead-air bug. It's a comparison knob, never the default.
+    assert Settings().barge_in_min_words == 2
