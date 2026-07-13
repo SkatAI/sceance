@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-07-13 — Ledger rows show latency, not bookkeeping
+
+The session list columns were `Started · Duration · Turns · Tokens` — none of
+which answer the question the ledger now exists to answer. They are replaced by:
+
+| LLM | TTS | P50 | P90 |
+|---|---|---|---|
+| `gpt-4.1 · 0.84s` | `gradium · 0.27s` | `1.71s` | `2.13s` |
+
+- **LLM / TTS** — what the session actually ran, and that stage's median
+  time-to-first-byte. The model and provider come from `persona_json`, the
+  **snapshot**, not the live persona file: Leo ran Haiku+Cartesia in the morning
+  and GPT-4.1+Gradium in the afternoon, and the ledger previously gave no way to
+  tell those rows apart while comparing their latency.
+- **P50 / P90** — perceived latency, the silence between the caller finishing and
+  the agent speaking (`user_stopped_speaking` → `bot_started_speaking`). Tinted:
+  under 1.5s reads as responsive, over 2s is a turn the caller noticed. `—` when a
+  session has no completed turn (a greeting-only call), rather than a misleading 0.
+- The dropped fields are still in the payload and on the detail page; the row's
+  tooltip carries started / duration / turns.
+- **Watch out**: `metrics.processor` is classified into stages by substring, and
+  `"StallGuardedDeepgramSTTService"` *contains* the substring `TTS`
+  (…Deepgram**STTS**ervice…). STT must be tested first or every Deepgram STT row
+  lands in the TTS column with nothing to show for it. A test pins the ordering.
+
 ## 2026-07-13 — STT is swappable (Deepgram | Gradium)
 
 `stt.provider` was parsed and then ignored — `build_stt` always constructed

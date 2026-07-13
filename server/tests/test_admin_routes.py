@@ -126,6 +126,11 @@ def test_api_sessions_maps_list_rows():
 
     class Connection:
         async def fetch(self, query, *args):
+            # The ledger row carries a latency summary, aggregated by two extra
+            # queries. Return nothing for those: this session has no completed
+            # turn, which is the case the row has to render without a percentile.
+            if "FROM metrics" in query or "WITH turn" in query:
+                return []
             return [
                 {
                     "id": sid,
@@ -136,6 +141,8 @@ def test_api_sessions_maps_list_rows():
                     "started_at": started,
                     "ended_at": None,
                     "duration_s": None,
+                    "llm_model": "gpt-4.1",
+                    "tts_provider": "gradium",
                     "total_prompt_tokens": 10,
                     "total_completion_tokens": 20,
                     "total_cache_read_tokens": 2,
@@ -176,6 +183,16 @@ def test_api_sessions_maps_list_rows():
             "started_at": started.isoformat(),
             "ended_at": None,
             "duration_s": None,
+            "llm_model": "gpt-4.1",
+            "tts_provider": "gradium",
+            # The fake connection returns the same row for every fetch, so the
+            # latency sub-queries find nothing to aggregate. A session with no
+            # completed turn genuinely has no percentile — None, not 0.
+            "llm_ttfb": None,
+            "tts_ttfb": None,
+            "p50": None,
+            "p90": None,
+            "latency_turns": 0,
             "prompt_tokens": 10,
             "completion_tokens": 20,
             "cache_read_tokens": 2,

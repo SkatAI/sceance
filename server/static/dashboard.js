@@ -109,7 +109,8 @@ function renderSessions(sessions) {
     const lang = (s.lang || "—").toUpperCase();
     return `
       <li class="session ${live ? "live" : ""}" data-id="${s.id}">
-        <a class="session-row" href="/sessions/${encodeURIComponent(s.id)}">
+        <a class="session-row" href="/sessions/${encodeURIComponent(s.id)}"
+           title="${escapeHtml(fmtDate(s.started_at))} · ${escapeHtml(fmtDuration(s.duration_s))} · ${s.msg_count} turns">
           <div class="s-persona">
             ${escapeHtml(s.persona_name || "(unnamed)")}
             <span class="lang">${escapeHtml(lang)}</span>
@@ -118,18 +119,44 @@ function renderSessions(sessions) {
             ${escapeHtml(s.environment || "—")}
             <span class="lang">${escapeHtml(s.framework || "?")}</span>
           </div>
-          <div class="s-date">${fmtDate(s.started_at)}</div>
-          <div class="s-dur">${fmtDuration(s.duration_s)}</div>
-          <div class="s-msgs">${s.msg_count} turn${s.msg_count === 1 ? "" : "s"}</div>
-          <div class="s-tok">
-            ${fmtTokens(s.prompt_tokens)} <span class="small">in</span>
-            · ${fmtTokens(s.completion_tokens)} <span class="small">out</span>
+          <div class="s-llm">
+            ${escapeHtml(shortModel(s.llm_model))}
+            <span class="small">${fmtSecs(s.llm_ttfb)}</span>
           </div>
+          <div class="s-tts">
+            ${escapeHtml(s.tts_provider || "—")}
+            <span class="small">${fmtSecs(s.tts_ttfb)}</span>
+          </div>
+          <div class="s-p50 ${latClass(s.p50)}">${fmtSecs(s.p50)}</div>
+          <div class="s-p90 ${latClass(s.p90)}">${fmtSecs(s.p90)}</div>
           <div class="s-chev">›</div>
         </a>
       </li>
     `;
   }).join("");
+}
+
+// A session's *perceived* latency: the silence between the caller finishing and
+// the agent speaking. Null when the session has no completed turn to measure
+// (a greeting-only call, or one that dropped) — say so rather than printing 0.
+function fmtSecs(v) {
+  return (v === null || v === undefined) ? "—" : `${v.toFixed(2)}s`;
+}
+
+// Under a second is fine, over two is a turn the caller noticed. Tinted, not
+// judged: the thresholds are conversational rules of thumb, not SLOs.
+function latClass(v) {
+  if (v === null || v === undefined) return "";
+  if (v >= 2.0) return "lat-bad";
+  if (v >= 1.5) return "lat-warn";
+  return "lat-ok";
+}
+
+// Model slugs are long and the interesting part is the tail: "meta-llama/
+// llama-4-maverick" -> "llama-4-maverick". The full string is in the row's title.
+function shortModel(model) {
+  if (!model) return "—";
+  return model.split("/").pop();
 }
 
 // Populate a filter <select> with options, preserving the current selection.

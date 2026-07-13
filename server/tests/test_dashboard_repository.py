@@ -130,3 +130,23 @@ def test_fetch_session_detail_keeps_persona_json_and_turn_events_raw():
     assert detail["persona_json"]["persona"]["name"] == "Marie"
     assert detail["turn_events"] == [{"kind": "user_stopped_speaking", "timestamp_ns": 1}]
     assert detail["started_at"] == started.isoformat()
+
+
+# ---- ledger latency columns --------------------------------------------------
+
+def test_stage_case_checks_stt_before_tts():
+    """The one that will bite: "StallGuardedDeepgramSTTService" contains "TTS".
+
+    Read it slowly — ...Deepgram**STTS**ervice... — the substring T-T-S is right
+    there. A TTS-first test would file every Deepgram STT row under TTS and put a
+    wrong number in the ledger's TTS column, with nothing to indicate it. The SQL
+    must test STT first.
+    """
+    from dashboard_repository import _STAGE_CASE
+
+    stt_at = _STAGE_CASE.index("'stt'")
+    tts_at = _STAGE_CASE.index("'tts'")
+    assert stt_at < tts_at, "STT must be classified before TTS — see the docstring"
+
+    # And the trap itself, so the reasoning is not just asserted but demonstrated:
+    assert "TTS" in "StallGuardedDeepgramSTTService"

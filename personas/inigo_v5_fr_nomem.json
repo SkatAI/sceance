@@ -21,16 +21,15 @@
     "cta": "Appelle Ignace, parle-lui."
   },
   "llm": {
-    "provider": "openai",
-    "model": "gpt-4.1",
-    "description": "GPT-4.1",
+    "provider": "openrouter",
+    "model": "meta-llama/llama-4-maverick",
+    "description": "Llama 4 Maverick on OpenRouter",
     "temperature": 1
   },
   "tts": {
     "provider": "gradium",
-    "model": null,
-    "voice_id": "axlOaUiFyOZhy4nv",
-    "voice_name": "Leo",
+    "voice_id": "7HhpTMy55D4HkXen",
+    "voice_name": "Vianney",
     "voice_description": "Francais"
   },
   "stt": {

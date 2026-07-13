@@ -87,6 +87,100 @@ def _session_filter(
     return where, args
 
 
+# Which pipeline stage a `metrics.processor` belongs to. The processor is the
+# emitting service's class name, and the two frameworks name them differently
+# ("OpenAIResponsesHttpLLMService#0" vs "GradbotLLM"), so the ledger classifies by
+# substring rather than by an exact list.
+#
+# ORDER MATTERS: check STT before TTS. "StallGuardedDeepgramSTTService" contains
+# the substring "TTS" (…S-**TTS**-ervice…), so a TTS-first test would file every
+# Deepgram STT row under TTS and quietly corrupt the column.
+_STAGE_CASE = """
+    CASE
+        WHEN m.processor ILIKE '%%STT%%' THEN 'stt'
+        WHEN m.processor ILIKE '%%TTS%%' THEN 'tts'
+        WHEN m.processor ILIKE '%%LLM%%' THEN 'llm'
+    END
+"""
+
+
+async def _session_latency(conn, session_ids: list) -> dict:
+    """Per-session latency summary for the ledger rows.
+
+    Two numbers per stage, and two percentiles of what the caller actually feels:
+
+    - `llm_ttfb` / `tts_ttfb` — median time-to-first-byte for each stage.
+    - `p50` / `p90` — perceived latency, the gap from `user_stopped_speaking` to
+      the next `bot_started_speaking`. This is the silence a caller sits through.
+
+    Computed here rather than per-row in the list query so it stays one round trip
+    for the whole page.
+    """
+    if not session_ids:
+        return {}
+
+    ttfb = await conn.fetch(
+        f"""
+        SELECT m.session_id,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY m.value_num)
+                   FILTER (WHERE {_STAGE_CASE} = 'llm') AS llm_ttfb,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY m.value_num)
+                   FILTER (WHERE {_STAGE_CASE} = 'tts') AS tts_ttfb
+          FROM metrics m
+         WHERE m.session_id = ANY($1::uuid[])
+           AND m.kind = 'ttfb' AND m.value_num IS NOT NULL
+         GROUP BY m.session_id
+        """,
+        session_ids,
+    )
+
+    # Pair each user_stopped_speaking with the bot_started_speaking that follows
+    # it. `lead` over the two kinds only, so an intervening event of another kind
+    # cannot break the pair.
+    perceived = await conn.fetch(
+        """
+        WITH turn AS (
+            SELECT session_id, kind, timestamp_ns,
+                   lead(timestamp_ns) OVER w AS next_ns,
+                   lead(kind)         OVER w AS next_kind
+              FROM events
+             WHERE session_id = ANY($1::uuid[])
+               AND kind IN ('user_stopped_speaking', 'bot_started_speaking')
+            WINDOW w AS (PARTITION BY session_id ORDER BY timestamp_ns)
+        ),
+        latency AS (
+            SELECT session_id, (next_ns - timestamp_ns) / 1e9 AS seconds
+              FROM turn
+             WHERE kind = 'user_stopped_speaking'
+               AND next_kind = 'bot_started_speaking'
+               AND next_ns > timestamp_ns
+        )
+        SELECT session_id,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY seconds) AS p50,
+               percentile_cont(0.9) WITHIN GROUP (ORDER BY seconds) AS p90,
+               count(*) AS turns
+          FROM latency
+         GROUP BY session_id
+        """,
+        session_ids,
+    )
+
+    out: dict = {sid: {} for sid in session_ids}
+    for r in ttfb:
+        out[r["session_id"]].update(
+            llm_ttfb=_f(r["llm_ttfb"]), tts_ttfb=_f(r["tts_ttfb"])
+        )
+    for r in perceived:
+        out[r["session_id"]].update(
+            p50=_f(r["p50"]), p90=_f(r["p90"]), latency_turns=r["turns"]
+        )
+    return out
+
+
+def _f(value) -> float | None:
+    return float(value) if value is not None else None
+
+
 async def list_sessions(
     pool: asyncpg.Pool,
     limit: int,
@@ -109,6 +203,13 @@ async def list_sessions(
             SELECT s.id, s.persona_name, s.environment, s.framework,
                    s.lang, s.started_at, s.ended_at,
                    extract(epoch FROM (s.ended_at - s.started_at)) AS duration_s,
+                   -- Straight off the persona snapshot, not the live persona file.
+                   -- The file gets edited (Leo ran Haiku+Cartesia this morning and
+                   -- GPT-4.1+Gradium this afternoon); the snapshot is what this
+                   -- session actually ran, which is the only honest thing to show
+                   -- next to its latency.
+                   s.persona_json -> 'llm' ->> 'model'    AS llm_model,
+                   s.persona_json -> 'tts' ->> 'provider' AS tts_provider,
                    s.total_prompt_tokens, s.total_completion_tokens,
                    s.total_cache_read_tokens, s.total_cache_creation_tokens,
                    s.total_tts_chars,
@@ -120,6 +221,7 @@ async def list_sessions(
             """,
             *filter_args, limit, offset,
         )
+        latency = await _session_latency(conn, [r["id"] for r in rows])
         total = await conn.fetchval(
             f"SELECT count(*) FROM sessions s {where}", *filter_args
         )
@@ -164,6 +266,14 @@ async def list_sessions(
                 "started_at": _iso(r["started_at"]),
                 "ended_at": _iso(r["ended_at"]),
                 "duration_s": float(r["duration_s"]) if r["duration_s"] is not None else None,
+                # What this session actually ran, and what it cost the caller.
+                "llm_model": r["llm_model"],
+                "tts_provider": r["tts_provider"],
+                "llm_ttfb": latency.get(r["id"], {}).get("llm_ttfb"),
+                "tts_ttfb": latency.get(r["id"], {}).get("tts_ttfb"),
+                "p50": latency.get(r["id"], {}).get("p50"),
+                "p90": latency.get(r["id"], {}).get("p90"),
+                "latency_turns": latency.get(r["id"], {}).get("latency_turns", 0),
                 "prompt_tokens": r["total_prompt_tokens"],
                 "completion_tokens": r["total_completion_tokens"],
                 "cache_read_tokens": r["total_cache_read_tokens"],

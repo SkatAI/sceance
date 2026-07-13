@@ -209,7 +209,7 @@ a:hover { text-decoration: underline; }
 }
 .session-head-row {
   display: grid;
-  grid-template-columns: 1.4fr 0.7fr 0.9fr 0.7fr 0.9fr 1.1fr auto;
+  grid-template-columns: 1.3fr 0.8fr 1.2fr 1fr 0.6fr 0.6fr auto;
   align-items: center;
   gap: 1rem;
   padding: 0 0.75rem 0.6rem;
@@ -269,7 +269,7 @@ a:hover { text-decoration: underline; }
 
 .session-row {
   display: grid;
-  grid-template-columns: 1.4fr 0.7fr 0.9fr 0.7fr 0.9fr 1.1fr auto;
+  grid-template-columns: 1.3fr 0.8fr 1.2fr 1fr 0.6fr 0.6fr auto;
   align-items: baseline;
   gap: 1rem;
   padding: 0 0.75rem;
@@ -297,20 +297,31 @@ a:hover { text-decoration: underline; }
   top: -2px;
   border-radius: 2px;
 }
-.s-date, .s-dur, .s-tok, .s-msgs, .s-env {
+.s-env, .s-llm, .s-tts, .s-p50, .s-p90 {
   font-family: var(--mono);
   font-size: 0.82rem;
   color: var(--text-2);
 }
 .s-env { text-transform: lowercase; letter-spacing: 0.04em; }
-.s-tok .small { color: var(--text-3); }
+/* The stage's own time-to-first-byte, riding alongside what produced it. */
+.s-llm .small, .s-tts .small {
+  color: var(--text-3);
+  margin-left: 0.35rem;
+}
+/* Perceived latency: the silence the caller sits through. Tinted by
+   conversational rule of thumb — under 1.5s reads as responsive, over 2s is a
+   turn they noticed. Okabe-Ito, so the tint survives colour-blindness. */
+.s-p50, .s-p90 { text-align: right; font-variant-numeric: tabular-nums; }
+.lat-ok   { color: var(--text-2); }
+.lat-warn { color: var(--accent); }
+.lat-bad  { color: var(--vermillion); font-weight: 500; }
 .s-chev {
   color: var(--text-3);
   font-family: var(--mono);
   transition: transform 120ms, color 120ms;
 }
 .session.open .s-chev { transform: rotate(90deg); color: var(--accent); }
-.session.live .s-dur::after {
+.session.live .s-persona::after {
   content: "● LIVE";
   color: var(--vermillion);
   margin-left: 0.4rem;
@@ -331,9 +342,9 @@ a:hover { text-decoration: underline; }
 @media (max-width: 820px) {
   .detail { grid-template-columns: 1fr; }
   .session-row { grid-template-columns: 1fr auto; }
-  .s-date, .s-dur, .s-tok, .s-msgs, .s-env { grid-column: 1; }
+  .s-env, .s-llm, .s-tts, .s-p50, .s-p90 { grid-column: 1; text-align: left; }
   .session-head-row { grid-template-columns: 1fr auto; }
-  .sh-date, .sh-dur, .sh-msgs, .sh-tok, .sh-chev { display: none; }
+  .sh-llm, .sh-tts, .sh-p50, .sh-p90, .sh-chev { display: none; }
 }
 .detail h3 {
   font-family: var(--mono);
