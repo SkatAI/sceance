@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-07-13 — Recover from a stale session instead of wedging on it
+
+- **Auth self-heals on a 401.** A rejected token from `/api/me` was left in
+  `localStorage`, so supabase-js kept handing the same dead token back on every
+  page load: you sat on the sign-in form holding a credential the server would
+  never accept, and only a fresh login cleared it. The dashboard was worse — it
+  bounced to `/`, which reloaded the same dead session and bounced again. Both
+  `static/app.js` and `static/auth.js` now `signOut()` on a 401.
+- **A rejected JWT now says why.** The reason (`invalid_token: Signature has
+  expired`, …) only reached the browser's network tab, so the server log showed a
+  bare `401 Unauthorized` with no way to tell an expired token from a bad
+  signature. `auth.verify_jwt` logs the failure plus the token's *unverified*
+  `alg`/`aud`/`iss`/`exp` — for the log line only, never for an auth decision.
+
 ## 2026-07-02 — Add OpenRouter as an LLM provider
 
 - **New provider:** personas can now set `llm.provider = "openrouter"` to reach
